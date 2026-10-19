@@ -675,3 +675,40 @@ func TestAccessorsForTheRoomLayer(t *testing.T) {
 		t.Error("revoked right should show")
 	}
 }
+
+// A timed-out reveal helps the player: it shows the types they hold the
+// fewest of, keeping what they are collecting hidden when there is a choice.
+func TestAutoRevealHidesTheMajorityType(t *testing.T) {
+	cases := []struct {
+		hand Hand
+		want []CardType
+	}{
+		{Hand{2, 1, 1, 0}, []CardType{Triangle, Cross}},
+		{Hand{1, 3, 0, 0}, []CardType{Circle, Triangle}}, // only two types: no choice
+		{Hand{1, 1, 2, 0}, []CardType{Circle, Triangle}}, // ties go to the lower type
+		{Hand{0, 2, 1, 1}, []CardType{Cross, Square}},
+	}
+	for _, c := range cases {
+		s := started(t, 2, 34)
+		r := rolesOf(s)
+		setHand(t, s, r.holderPartner, c.hand)
+		mustApply(t, s, Suspect{By: r.o1, Target: r.holderPartner})
+		evs := mustApply(t, s, AutoReveal{Player: r.holderPartner})
+		if f, _ := find[SuspicionFreed](evs); !slices.Equal(f.Revealed, c.want) {
+			t.Errorf("hand %v: revealed %v, want %v", c.hand, f.Revealed, c.want)
+		}
+	}
+}
+
+// The default is chosen from the hand as it was when suspicion was raised.
+func TestAutoRevealUsesTheHandAtSuspicionTime(t *testing.T) {
+	s := started(t, 2, 35)
+	r := rolesOf(s)
+	setHand(t, s, r.holder, Hand{2, 1, 1, 1})
+	mustApply(t, s, Suspect{By: r.o1, Target: r.holder})
+	mustApply(t, s, Pass{Player: r.holder, Card: Triangle}) // the hand changes after the suspicion
+	evs := mustApply(t, s, AutoReveal{Player: r.holder})
+	if f, _ := find[SuspicionFreed](evs); !slices.Equal(f.Revealed, []CardType{Triangle, Cross, Square}) {
+		t.Errorf("revealed %v", f.Revealed)
+	}
+}

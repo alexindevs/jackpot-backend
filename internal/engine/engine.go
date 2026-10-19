@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"math"
@@ -26,6 +27,7 @@ type player struct {
 type pendingReveal struct {
 	required int
 	options  []CardType // types held at the moment of suspicion
+	hand     Hand       // the hand at that moment, for choosing a helpful default
 }
 
 // State is one game. It is not safe for concurrent use: the room runner owns
@@ -337,7 +339,7 @@ func (s *State) suspect(by, target PlayerID) ([]Event, error) {
 	options := t.hand.Types()
 	evs := []Event{SuspicionRaised{By: by, Target: target, PointsLeft: b.points, Required: required}}
 	if len(options) >= required {
-		s.pendingReveals[target] = &pendingReveal{required: required, options: options}
+		s.pendingReveals[target] = &pendingReveal{required: required, options: options, hand: t.hand}
 		return append(evs, RevealRequested{Target: target, Required: required, Options: options}), nil
 	}
 	evs = append(evs, SuspicionFailed{Target: target, Hand: t.hand})
@@ -380,8 +382,15 @@ func (s *State) autoReveal(id PlayerID) ([]Event, error) {
 	if pr == nil {
 		return nil, ErrNoPending
 	}
+	// Help the player: show the types they hold the fewest of, which keeps
+	// whatever they are collecting hidden when there is a choice.
 	opts := slices.Clone(pr.options)
-	s.rng.Shuffle(len(opts), func(i, j int) { opts[i], opts[j] = opts[j], opts[i] })
+	slices.SortStableFunc(opts, func(a, b CardType) int {
+		if c := cmp.Compare(pr.hand[a], pr.hand[b]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
 	return s.reveal(id, opts[:pr.required])
 }
 

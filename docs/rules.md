@@ -53,7 +53,7 @@ Anything not marked is Decided.
   - A 5-card hand with 3+2 has only 2 types, so it fails. This is intended.
 - Shown cards are **revealed to the room**. Leaking hand info is part of the game.
 - When a player fails the check, the room sees the hand they were holding.
-- The suspected player chooses which cards to show, within **30 seconds**. *(Assumed: if they don't, the server picks a valid set at random.)*
+- The suspected player chooses which cards to show, within **30 seconds**. If they don't, the server shows the types they hold the **fewest** of, so it gives away as little as possible and hides what they're collecting. (If they can't show enough different types, they were already caught when the suspicion was raised.)
 - If they can't show enough different types, they **reset**:
   - Their cards go back to the pool and they get a fresh hand of **exactly one card of each type**, always.
   - *(Assumed: if the pool ever lacks a type, that card is created, so the rule never bends. The deck is rebuilt every round, so this never carries over. With players + 7 per type it didn't happen through 5 resets in a round in simulation.)*
@@ -117,11 +117,11 @@ Anything not marked is Decided.
 
 - A player can **view running rooms** to spectate, **create** a room and invite people to play, **invite a specific person to be their partner**, or **join** a room and invite a partner (or anyone else).
 - **4 players** are needed to start. The room **stops accepting joiners at 10** (enough for 5 teams).
-- A **2 minute countdown** starts when 4 players have joined. This is separate from the pre-round chat. When it ends, the game starts.
+- A **2 minute countdown** starts when 4 players have joined. This is separate from the pre-round chat. When it ends, the game starts. If the room drops below 4 the countdown cancels, and it restarts from a full 2 minutes at 4 again.
+- A **full room (10 players, five teams) starts immediately**, without waiting for the countdown. Anyone still without a partner is paired at random.
 - Anyone who hasn't picked a partner by then is **randomly paired with another free player**.
 - Only signed-in start.ng players can join as players.
-- *(Assumed: the countdown cancels if the room drops below 4 players, and starts again from a full 2 minutes at 4. A full room still waits out the countdown.)*
-- *(Assumed: if one free player is left over without a partner, they become a spectator.)*
+- If one free player is left over without a partner, they become a spectator. If they don't want that, they should pick a partner in time.
 - *(Assumed: accepting a partner invite also joins you to the room. Leaving the lobby frees your partner. A lobby player who disconnects gets the same 90 second window, then is removed.)*
 - **Open:** how a player finds or is told about invitations when they aren't in the room; the list of running rooms and who may see it.
 

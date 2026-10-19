@@ -27,7 +27,8 @@ type Reveal struct {
 	Types  []CardType
 }
 
-// AutoReveal is the server revealing for a player whose prompt timed out.
+// AutoReveal is the server revealing for a player whose prompt timed out. It
+// shows the types they hold the fewest of, to give away as little as possible.
 type AutoReveal struct{ Player PlayerID }
 
 // Proclaim is By calling "Jackpot" for their partner.

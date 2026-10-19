@@ -118,6 +118,7 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		dl:         newDeadlines(),
 	}
 	_ = r.join(now, creator)
+	r.syncCountdown(now)
 	r.updateEmpty(now)
 	return r, r.take()
 }
@@ -142,6 +143,7 @@ func (r *Room) Handle(now time.Time, from engine.PlayerID, in Input) ([]Out, err
 		r.out = nil
 		return nil, err
 	}
+	r.syncCountdown(now)
 	r.updateEmpty(now)
 	return r.take(), nil
 }
@@ -157,6 +159,7 @@ func (r *Room) Tick(now time.Time) []Out {
 		r.dl.clear(k)
 		r.fire(k, at)
 	}
+	r.syncCountdown(now)
 	r.updateEmpty(now)
 	return r.take()
 }
@@ -252,7 +255,6 @@ func (r *Room) join(now time.Time, id engine.PlayerID) error {
 	r.order = append(r.order, id)
 	r.broadcast(MemberJoined{Player: id})
 	r.emit(id, r.snapshotFor(id))
-	r.syncCountdown(now)
 	return nil
 }
 
@@ -305,13 +307,18 @@ func (r *Room) leaveLobby(now time.Time, id engine.PlayerID, reason string) {
 	}
 	r.broadcast(MemberLeft{Player: id, Reason: reason})
 	r.deleteMember(id)
-	r.syncCountdown(now)
 }
 
-// syncCountdown starts the lobby countdown when enough players are in, and
-// cancels it if they drop below the minimum.
+// syncCountdown runs after anything that can change who is in the lobby. It
+// starts the countdown when enough players are in, cancels it if they drop
+// below the minimum, and starts the game at once when the room is full (five
+// teams' worth of players).
 func (r *Room) syncCountdown(now time.Time) {
 	if r.phase != PhaseLobby {
+		return
+	}
+	if len(r.members) >= r.cfg.MaxPlayers {
+		r.startGame(now)
 		return
 	}
 	k := dkey{kind: dkCountdown}
@@ -423,6 +430,7 @@ func (r *Room) declinePartner(me, from engine.PlayerID) error {
 // partner is paired at random with someone else who is free. If one player is
 // left over (an odd number of free players), they become a spectator.
 func (r *Room) startGame(now time.Time) {
+	r.dl.clear(dkey{kind: dkCountdown})
 	r.invites = map[inviteKey]bool{}
 
 	var free []engine.PlayerID

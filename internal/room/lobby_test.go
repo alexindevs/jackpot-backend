@@ -42,12 +42,50 @@ func TestCountdownStartsAtFourAndCancelsBelow(t *testing.T) {
 	}
 }
 
-func TestRoomStopsAcceptingAtTen(t *testing.T) {
+func TestAFullRoomStartsImmediately(t *testing.T) {
 	h := newHarness(t, 3)
-	h.joinN(10)
-	h.mustFail(pid(10), Join{}, ErrRoomFull)
+	h.joinN(9)
+	if h.r.Phase() != PhaseLobby {
+		t.Fatal("nine players should still be waiting for the countdown")
+	}
+	h.must(pid(9), Join{})
+	if h.r.Phase() != PhaseChat {
+		t.Fatalf("a full room should start at once; phase = %v", h.r.Phase())
+	}
+	gs := msgs[GameStarting](h.last, pid(0))
+	if len(gs) != 1 || len(gs[0].Teams) != 5 {
+		t.Fatalf("GameStarting = %+v", gs)
+	}
+	if h.r.dl.has(dkey{kind: dkCountdown}) {
+		t.Error("the countdown should be gone")
+	}
+	h.mustFail(pid(10), Join{}, ErrNotJoinable)
 	h.must(pid(10), Spectate{}) // but they can watch
-	h.mustFail(pid(3), Join{}, ErrAlreadyMember)
+	h.mustFail(pid(3), Join{}, ErrNotJoinable)
+}
+
+// Accepting a partner invite joins you to the room and pairs you. If that
+// fills the room, the pair must survive the start.
+func TestTheLastSeatTakenByAnAcceptedInviteKeepsItsPair(t *testing.T) {
+	h := newHarness(t, 14)
+	h.joinN(9)
+	h.must(pid(3), InvitePartner{To: "late"})
+	h.must("late", AcceptPartner{From: pid(3)})
+	if h.r.Phase() != PhaseChat {
+		t.Fatalf("phase = %v, want chat", h.r.Phase())
+	}
+	if h.partnerOf(pid(3)) != "late" || h.partnerOf("late") != pid(3) {
+		t.Error("the accepted pair must be kept")
+	}
+	found := false
+	for _, tm := range msgs[GameStarting](h.last, pid(0))[0].Teams {
+		if (tm[0] == pid(3) && tm[1] == "late") || (tm[1] == pid(3) && tm[0] == "late") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the pair is missing from the teams")
+	}
 }
 
 func TestPartnerInviteFlow(t *testing.T) {
@@ -87,12 +125,6 @@ func TestAcceptingAnOutsidersInviteBringsThemIn(t *testing.T) {
 	if h.r.members["newcomer"] == nil || h.partnerOf(pid(0)) != "newcomer" {
 		t.Fatal("the invitee should have joined and paired")
 	}
-}
-
-func TestOutsiderCannotBeInvitedToAFullRoom(t *testing.T) {
-	h := newHarness(t, 7)
-	h.joinN(10)
-	h.mustFail(pid(0), InvitePartner{To: "newcomer"}, ErrRoomFull)
 }
 
 func TestInviteToRoom(t *testing.T) {
