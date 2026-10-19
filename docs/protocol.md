@@ -84,6 +84,16 @@ The card in a `passed` event is only real for the player who passed it and the p
 - `timer_started.kind` is `hold`, `reveal`, `forced` or `reconnect`. Times (`endsAt`, `reconnectBy`, `serverTime`) are RFC 3339 UTC strings.
 - Lists are `[]`, never `null`.
 
+## Field notes
+
+- `round_won {team, proclaimer, holder, wins, letter}`: `team` is the winning team's id. `wins` is **that team's new total** number of round wins (a number), and `letter` is the letter it earned (`JACKPOT[wins-1]`). The scoreboard in a snapshot, `game.wins`, is a map from team id to count (JSON keys are strings: `{"0":2,"1":1}`).
+- `game_over {result}`: `result.winner` is a team id and means nothing when `result.draw` is true. `result.reason` is `wins`, `agreement` or `forfeit`. `result.wins` is a map from team id to count. `result.countsForStats` is false for a forfeit.
+- `suspicion_raised {by, target, pointsLeft, required}`: `pointsLeft` is the suspector's remaining points, and `required` is how many different types the target must show.
+- `passed {from, to, card, auto}`: `auto` is true when the server passed for a holder who ran out of time (or didn't answer a forced-pass prompt).
+- `false_proclaim {by, pointsLeft, revoked}`: `revoked` is true when `by` was at 0 points, which removes their right to proclaim until the next round.
+- `player_reset {player, minted}`: after a reset the player's new hand is one of each type. `minted` is normally empty.
+- `hand_update` arrives for your own hand whenever it changes, including at the start of each round, after a pass you made or received, and after a reset. It is the source of truth for your hand.
+
 ## Limits
 
 Messages are capped at 8 KB. A client may send about 20 messages a second (bursts of 40); beyond that the connection is closed. A client that stops reading is disconnected rather than waited for.
