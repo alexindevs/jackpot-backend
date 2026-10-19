@@ -59,7 +59,7 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 - `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. `{room,creator,phase,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.
 
-**Lobby**: `member_joined {player}`, `member_left {player,reason}`, `room_invite {from,room}`, `partner_invite {from,to,room}`, `partner_declined {by}`, `team_formed {a,b}`, `team_broken {a,b}`, `countdown_started {endsAt}`, `countdown_cancelled`, `game_starting {teams:[[a,b]],demoted:[]}` (demoted players are now spectators).
+**Lobby**: `member_joined {player}`, `member_left {player,reason}`, `room_invite {from,room}`, `partner_invite {from,to,room}`, `partner_declined {by}`, `team_formed {a,b}`, `team_broken {a,b}`, `countdown_started {endsAt}`, `countdown_cancelled`, `game_starting {teams:[[a,b]],demoted:[],seats:[...],suspicionPoints,winsToFinish}`. A team's id is its index in `teams`. `seats` is the ring order, clockwise: the holder passes to the next entry, wrapping around. `suspicionPoints` (3) is what every player has at the start of every round, and `winsToFinish` (7) ends the game. Demoted players are now spectators. If the ring is reshuffled between rounds you get a `seats_reshuffled` game event with the new order.
 
 Invitations are only delivered to people who are connected at that moment. They are not queued.
 
@@ -73,6 +73,16 @@ Invitations are only delivered to people who are connected at that moment. They 
 - `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
 
 The card in a `passed` event is only real for the player who passed it and the player who received it; everyone else gets `255`.
+
+## Values and types
+
+- **Ids are strings.** A player's id is start.ng's numeric id written as text (start.ng's `217` is `"217"` on this socket and in the API). Compare them as strings.
+- `snapshot.phase` (the room) is one of `lobby`, `chat`, `playing`, `over`, `closed`. `chat` is the private team chat before a round; it is shown while `game.phase` is `waiting`.
+- `snapshot.game.phase` (the engine) is one of `waiting` (between rounds), `playing`, `over`.
+- `snapshot.game` is `null` until the game starts. Inside it, `yourHand` is `null` for spectators and removed players, and `hands` is `null` for everyone except spectators.
+- Team ids are numbers: the index into `game_starting.teams`. `snapshot.players[].team` is `0` in the lobby and means nothing until the game has started.
+- `timer_started.kind` is `hold`, `reveal`, `forced` or `reconnect`. Times (`endsAt`, `reconnectBy`, `serverTime`) are RFC 3339 UTC strings.
+- Lists are `[]`, never `null`.
 
 ## Limits
 

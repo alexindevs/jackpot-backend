@@ -537,7 +537,13 @@ func (r *Room) startGame(now time.Time) {
 	}
 	r.game = g
 	r.record(GameStarted{Room: r.id, At: now, Teams: slices.Clone(pairs)})
-	r.broadcast(GameStarting{Teams: pairs, Demoted: demoted})
+	r.broadcast(GameStarting{
+		Teams:           pairs,
+		Demoted:         demoted,
+		Seats:           g.Seats(),
+		SuspicionPoints: r.cfg.Engine.SuspicionPoints,
+		WinsToFinish:    r.cfg.Engine.WinsToFinish,
+	})
 	r.startChat(now)
 }
 

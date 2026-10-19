@@ -96,11 +96,18 @@ type (
 	CountdownStarted   struct{ EndsAt time.Time }
 	CountdownCancelled struct{}
 
-	// GameStarting says who is on which team. Demoted players were left
-	// without a partner and are now spectators.
+	// GameStarting says who is on which team (a team's id is its index in
+	// Teams) and where everyone sits, clockwise. Demoted players were left
+	// without a partner and are now spectators. SuspicionPoints is what each
+	// player gets at the start of every round, and WinsToFinish is how many
+	// round wins end the game, so a client can set up its scoreboard without
+	// waiting for a snapshot.
 	GameStarting struct {
-		Teams   [][2]engine.PlayerID
-		Demoted []engine.PlayerID
+		Teams           [][2]engine.PlayerID
+		Demoted         []engine.PlayerID
+		Seats           []engine.PlayerID
+		SuspicionPoints int
+		WinsToFinish    int
 	}
 
 	ChatStarted struct {

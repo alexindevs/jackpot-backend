@@ -322,3 +322,45 @@ func TestSnapshotsNameTheCreator(t *testing.T) {
 		t.Errorf("snapshot = %+v", s)
 	}
 }
+
+// A client that was in the room when the game started has no snapshot, so
+// the start message itself must say where everyone sits and what the
+// settings are.
+func TestGameStartingCarriesSeatsAndSettings(t *testing.T) {
+	h := newHarness(t, 21)
+	h.startGame(6)
+	gs := msgs[GameStarting](h.last, pid(0))[0]
+
+	if len(gs.Seats) != 6 {
+		t.Fatalf("seats = %v", gs.Seats)
+	}
+	seen := map[engine.PlayerID]bool{}
+	for _, id := range gs.Seats {
+		seen[id] = true
+	}
+	for _, id := range h.r.order {
+		if !seen[id] {
+			t.Errorf("%s has no seat", id)
+		}
+	}
+	// The same ring the engine uses, and partners are never adjacent.
+	if got := h.r.game.Seats(); !slices.Equal(got, gs.Seats) {
+		t.Errorf("announced seats %v, engine seats %v", gs.Seats, got)
+	}
+	for i, id := range gs.Seats {
+		if next := gs.Seats[(i+1)%len(gs.Seats)]; h.partnerOf(id) == next {
+			t.Errorf("partners %s and %s sit side by side", id, next)
+		}
+	}
+	if gs.SuspicionPoints != 3 || gs.WinsToFinish != 7 {
+		t.Errorf("settings = %d points, %d wins", gs.SuspicionPoints, gs.WinsToFinish)
+	}
+	// Team ids are the indexes in Teams.
+	for ti, team := range gs.Teams {
+		for _, id := range team {
+			if h.r.members[id].team != engine.TeamID(ti) {
+				t.Errorf("%s: team index %d but engine team %d", id, ti, h.r.members[id].team)
+			}
+		}
+	}
+}
