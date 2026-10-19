@@ -23,7 +23,8 @@ Anything not marked is Decided.
 - There is exactly one passing card in play. Whoever holds it has 5 cards.
 - The holder passes one card to the next player. Typically they pass a card of a type they hold the fewest of.
 - **Hold timer:** after 60 seconds, the server passes a card for the holder: the one whose type the holder has the fewest copies of. Ties are broken randomly.
-- **Open:** ring order (how players and partners are seated around the ring).
+- **Ring order:** players are seated around a ring in random order, with one constraint: **a player never has their partner directly on either side**. With 2 teams this forces alternating seats.
+- **Open:** if a team is removed mid-game the ring closes up, which can put partners next to each other. Re-seat, or accept it?
 
 ## 3. Winning a round
 
@@ -33,12 +34,12 @@ Anything not marked is Decided.
 - At any other time a proclamation is accepted. If it's **false** (the proclaimer's partner doesn't hold 4 of a kind), the proclaimer **loses one suspicion point**.
 - **Provisional:** a false proclamation made at 0 points removes the proclaimer's right to proclaim for the rest of the game. The alternative is a separate points pool for proclamations. Not decided.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
-- Each new round begins with the 2-minute private team chat (see section 1).
-- **Open:** what else happens between rounds (redeal, and whether suspicion points refresh each round or last the whole game).
+- A new round **redeals**, and **suspicion points refresh**. Each round begins with the 2-minute private team chat (see section 1).
+- **Open:** which player gets the extra (passing) card each round, and whether seating is reshuffled.
 
 ## 4. Suspicion
 
-- Every player has **3 suspicion points**, per game as far as stated. Once they're used up you can't suspect anyone.
+- Every player has **3 suspicion points per round**, refreshed at the start of each round. Once they're used up you can't suspect anyone until the next round.
 - You can suspect **anyone at any time**, including your own partner (allowed, but a bad idea) and players who don't hold 4 of a kind.
 - The **suspector always loses the point**, whether or not the suspicion was right.
 - The suspected player must immediately show cards of different types:
@@ -51,7 +52,7 @@ Anything not marked is Decided.
 - If they can't show enough different types, they **reset**:
   - Their cards go back to the pool and they get a fresh hand of one card of each type.
   - If they hold the passing card, they **pass it to the next player first, then reset**. With 5 cards of one type, they pass one and reset the rest.
-  - **Open:** which card is passed in this forced pass (player's choice, or the server's rule above).
+  - The player is **prompted to choose** which card to pass. *(Provisional. Assumed: if they don't choose before the hold timer runs out, the server passes the odd-one-out card as in section 2.)*
 - If the partner's proclamation is processed **before** the suspicion, the team wins and the suspicion no longer matters.
 
 ## 5. Signalling
@@ -76,8 +77,10 @@ Anything not marked is Decided.
 
 ## 8. Dropping out
 
-- A team can drop out at any time. After a **timeout**, if the leaving player holds the passing card it's passed on, and the **whole team is removed** (both partners). The remaining teams continue.
-- **Open:** the timeout length, what happens to the removed team's cards, and what happens if only one team remains. Disconnects are assumed to follow the same path.
+- A team can drop out at any time. After a **1 minute timeout**, if the leaving player holds the passing card it's passed on, and the **whole team is removed** (both partners). Their cards go **back to the pool**. The remaining teams continue.
+- If only **one team is left, it wins by forfeit**. A game needs at least 2 teams.
+- *(Assumed: disconnects follow the same path as dropping out.)*
+- **Open:** whether a forfeit win counts toward leaderboard stats.
 
 ## 9. Stats and leaderboards
 
