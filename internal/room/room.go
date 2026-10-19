@@ -43,6 +43,9 @@ var (
 	ErrBadTarget       = errors.New("invalid target")
 	ErrWrongPhase      = errors.New("not allowed right now")
 	ErrBadText         = errors.New("message must be 1 to 500 characters")
+	ErrNotCreator      = errors.New("only the room's creator can do that")
+	ErrTooFewPlayers   = errors.New("not enough players to start")
+	ErrUnpairedPlayers = errors.New("some players don't have a partner yet")
 )
 
 // Config holds the room's tunable numbers. Defaults match docs/rules.md.
@@ -89,9 +92,10 @@ type inviteKey struct{ from, to engine.PlayerID }
 
 // Room is one game room. It is not safe for concurrent use.
 type Room struct {
-	id  string
-	cfg Config
-	rng *rand.Rand
+	id      string
+	creator engine.PlayerID
+	cfg     Config
+	rng     *rand.Rand
 
 	phase      Phase
 	members    map[engine.PlayerID]*member
@@ -110,6 +114,7 @@ type Room struct {
 func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now time.Time) (*Room, []Out) {
 	r := &Room{
 		id:         id,
+		creator:    creator,
 		cfg:        cfg,
 		rng:        rng,
 		members:    map[engine.PlayerID]*member{},
@@ -179,6 +184,8 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.connect(now, from)
 	case Disconnect:
 		return r.disconnect(now, from)
+	case StartNow:
+		return r.startNow(now, from)
 	case InviteToRoom:
 		return r.inviteToRoom(from, v.To)
 	case InvitePartner:
@@ -332,6 +339,27 @@ func (r *Room) syncCountdown(now time.Time) {
 		r.dl.clear(k)
 		r.broadcast(CountdownCancelled{})
 	}
+}
+
+// startNow lets the creator skip the countdown when everything is ready: at
+// least two teams, and no player still without a partner.
+func (r *Room) startNow(now time.Time, from engine.PlayerID) error {
+	if r.phase != PhaseLobby {
+		return ErrWrongPhase
+	}
+	if from != r.creator || r.members[from] == nil {
+		return ErrNotCreator
+	}
+	if len(r.members) < r.cfg.MinPlayers {
+		return ErrTooFewPlayers
+	}
+	for _, m := range r.members {
+		if m.partner == "" {
+			return ErrUnpairedPlayers
+		}
+	}
+	r.startGame(now)
+	return nil
 }
 
 func (r *Room) inviteToRoom(from, to engine.PlayerID) error {

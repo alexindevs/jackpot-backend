@@ -41,6 +41,7 @@ type GameInfo struct {
 // reconnect, so a client never has to replay history.
 type Snapshot struct {
 	Room       string
+	Creator    engine.PlayerID // the only one who can skip the lobby countdown
 	Phase      Phase
 	Players    []PlayerInfo
 	Spectators int
@@ -49,7 +50,7 @@ type Snapshot struct {
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
-	s := Snapshot{Room: r.id, Phase: r.phase, Spectators: len(r.spectators)}
+	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators)}
 	for _, id := range r.order {
 		m := r.members[id]
 		s.Players = append(s.Players, PlayerInfo{

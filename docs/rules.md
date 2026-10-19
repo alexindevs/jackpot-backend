@@ -118,6 +118,7 @@ Anything not marked is Decided.
 - A player can **view running rooms** to spectate, **create** a room and invite people to play, **invite a specific person to be their partner**, or **join** a room and invite a partner (or anyone else).
 - **4 players** are needed to start. The room **stops accepting joiners at 10** (enough for 5 teams).
 - A **2 minute countdown** starts when 4 players have joined. This is separate from the pre-round chat. When it ends, the game starts. If the room drops below 4 the countdown cancels, and it restarts from a full 2 minutes at 4 again.
+- The room's **creator** can **skip the countdown** once there are at least 2 teams and **nobody is left without a partner**. Nobody else can. *(Assumed: if the creator leaves the lobby, nobody can skip; the countdown still runs.)*
 - A **full room (10 players, five teams) starts immediately**, without waiting for the countdown. Anyone still without a partner is paired at random.
 - Anyone who hasn't picked a partner by then is **randomly paired with another free player**.
 - Only signed-in start.ng players can join as players.

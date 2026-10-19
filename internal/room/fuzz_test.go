@@ -81,7 +81,9 @@ func randomInput(d *rand.Rand, r *Room, pick func() engine.PlayerID) Input {
 	if r.phase == PhaseLobby && d.IntN(3) == 0 {
 		return Join{}
 	}
-	switch d.IntN(24) {
+	switch d.IntN(25) {
+	case 24:
+		return StartNow{}
 	case 0:
 		return Join{}
 	case 1:

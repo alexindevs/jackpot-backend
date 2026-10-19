@@ -21,6 +21,9 @@ type (
 
 // Lobby.
 type (
+	// StartNow lets the room's creator skip the countdown, once there are at
+	// least two teams and nobody is left without a partner.
+	StartNow       struct{}
 	InviteToRoom   struct{ To engine.PlayerID }
 	InvitePartner  struct{ To engine.PlayerID }
 	AcceptPartner  struct{ From engine.PlayerID }
@@ -47,6 +50,7 @@ func (Spectate) isInput()       {}
 func (Leave) isInput()          {}
 func (Connect) isInput()        {}
 func (Disconnect) isInput()     {}
+func (StartNow) isInput()       {}
 func (InviteToRoom) isInput()   {}
 func (InvitePartner) isInput()  {}
 func (AcceptPartner) isInput()  {}
