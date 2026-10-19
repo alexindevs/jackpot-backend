@@ -92,6 +92,21 @@ const (
 	PhaseOver
 )
 
+func (p Phase) String() string {
+	switch p {
+	case PhaseWaiting:
+		return "waiting"
+	case PhasePlaying:
+		return "playing"
+	case PhaseOver:
+		return "over"
+	}
+	return "unknown"
+}
+
+// MarshalText makes phases readable in JSON.
+func (p Phase) MarshalText() ([]byte, error) { return []byte(p.String()), nil }
+
 // Config holds the tunable numbers.
 type Config struct {
 	// SpareCopies is how many cards of each type the deck holds beyond one per

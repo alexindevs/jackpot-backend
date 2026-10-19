@@ -128,6 +128,36 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 	return r, r.take()
 }
 
+// MarshalText makes phases readable in JSON.
+func (p Phase) MarshalText() ([]byte, error) { return []byte(p.String()), nil }
+
+// Info is what a room list shows.
+type Info struct {
+	ID         string
+	Creator    engine.PlayerID
+	Phase      Phase
+	Players    int
+	Teams      int // teams formed so far (pairs)
+	Spectators int
+	MaxPlayers int
+	Joinable   bool
+}
+
+func (r *Room) Info() Info {
+	pairs := 0
+	for _, m := range r.members {
+		if m.partner != "" {
+			pairs++
+		}
+	}
+	return Info{
+		ID: r.id, Creator: r.creator, Phase: r.phase,
+		Players: len(r.members), Teams: pairs / 2, Spectators: len(r.spectators),
+		MaxPlayers: r.cfg.MaxPlayers,
+		Joinable:   r.phase == PhaseLobby && len(r.members) < r.cfg.MaxPlayers,
+	}
+}
+
 func (r *Room) ID() string                         { return r.id }
 func (r *Room) Phase() Phase                       { return r.phase }
 func (r *Room) Game() *engine.State                { return r.game }

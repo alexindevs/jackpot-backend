@@ -6,14 +6,13 @@ Decisions are the author's. Anything marked **unverified** is an inference from 
 
 1. **Engine** (`internal/engine`, built): a pure state machine. Commands in, events out. No I/O, no timers, deterministic given a seeded RNG. Covered by unit tests and a randomized test that plays hundreds of games and checks card conservation after every command.
 2. **Room** (`internal/room`, built): everything that happens over time around the engine. It has no goroutines or clock of its own. You give it inputs with a timestamp (`Handle`), tell it time has passed (`Tick`), and ask when it next needs attention (`NextDeadline`); each call returns the messages to send. That makes every timer testable without sleeping. It covers the lobby (joining, partner invites, the 2 minute countdown, random pairing), the pre-round chat with the Ready button, the hold timer (60 s), the reveal and forced-pass prompts (30 s), the 90 s reconnect window, instant drop-outs, the 1 minute empty-room close, per-recipient hiding of private information, and snapshots for reconnecting players. A thin `Runner` drives one room from a single goroutine with real time; inputs are handled strictly in arrival order, so there is no collection window.
-3. **Transport** (not built): WebSockets. The room already decides who may see what; the transport only authenticates, maps socket messages to room inputs, and delivers outputs.
+3. **Transport** (`internal/transport`, built): WebSockets, using `github.com/coder/websocket`. A `Manager` owns every room and connection: it authenticates the first message, keeps one connection per player (a second tab replaces the first, close code 4409), keeps a player in only one room, lists rooms, sends each player their own messages through a bounded queue (a client that can't keep up is dropped, never waited for), and rate-limits clients. The room already decides who may see what, so the transport only translates between JSON and room inputs and messages. The wire format is in `docs/protocol.md`. `cmd/server` runs it; it is configured by environment variables, listens on plain `ws://`, and expects a reverse proxy for TLS.
 4. **Persistence**: Postgres.
 
 ## Not built yet
 
 - Signals (the gesture vocabulary and the 20% partner-only roll) and the public chat with its 24 hour storage.
 - A room manager: creating rooms, listing running rooms, and making sure a player is in only one.
-- The WebSocket transport and start.ng auth.
 - Persistence and leaderboards.
 
 ## Language and storage
@@ -34,7 +33,7 @@ From https://start.ng/docs.md:
 ## Auth plan (unverified)
 
 1. The frontend gets the player's game session as described in the docs.
-2. It sends the token to our server when it opens the socket.
+2. It sends the token to our server as the first WebSocket message (never in the URL, which would end up in logs).
 3. The server calls `GET https://api.start.ng/games/{game}/player` with `Authorization: Bearer <session>`. The reply is `{ id, name, style }`.
 4. The server **never trusts a name or style sent by the client**. It uses what start.ng returned.
 5. Sessions last 2 hours, so reconnecting after that needs a fresh session.

@@ -8,9 +8,10 @@ import (
 )
 
 type request struct {
-	from  engine.PlayerID
-	in    Input
-	reply chan error
+	from    engine.PlayerID
+	in      Input
+	inspect func(*Room) // runs inside the loop instead of handling an input
+	reply   chan error
 }
 
 // Runner drives a Room from one goroutine: inputs arrive on a channel (so
@@ -41,6 +42,18 @@ func (rn *Runner) Submit(from engine.PlayerID, in Input) error {
 	}
 }
 
+// Inspect runs fn inside the room's loop, so it can read the room without
+// racing. fn must not block or keep the *Room.
+func (rn *Runner) Inspect(fn func(*Room)) error {
+	req := request{inspect: fn, reply: make(chan error, 1)}
+	select {
+	case rn.in <- req:
+		return <-req.reply
+	case <-rn.done:
+		return ErrClosed
+	}
+}
+
 // Run blocks until ctx is cancelled or the room closes.
 func (rn *Runner) Run(ctx context.Context) {
 	defer close(rn.done)
@@ -59,6 +72,11 @@ func (rn *Runner) Run(ctx context.Context) {
 			}
 			return
 		case req := <-rn.in:
+			if req.inspect != nil {
+				req.inspect(rn.room)
+				req.reply <- nil
+				break
+			}
 			outs, err := rn.room.Handle(rn.now(), req.from, req.in)
 			rn.sink(outs)
 			req.reply <- err
