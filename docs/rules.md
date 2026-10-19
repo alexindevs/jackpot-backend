@@ -17,6 +17,7 @@ Anything not marked is Decided.
 - Every player starts with one card of each type. One player also gets an extra card of one type, so they start with 5 cards. That extra card is the **passing card**.
 - Copies per type: 11, which covers the 5-team maximum. Cards not dealt form the **pool**.
 - Before **every round**, each team gets a **private chat for 2 minutes** to agree a signalling code. Teams are expected to use a fresh code each round, since reusing signals lets opponents learn them. This is strategy advice, not an enforced rule.
+- This is the **only** private channel. Once the round starts, partners can only coordinate through signals (section 5) or the public chat (section 10).
 
 ## 2. Passing
 
@@ -24,7 +25,8 @@ Anything not marked is Decided.
 - The holder passes one card to the next player. Typically they pass a card of a type they hold the fewest of.
 - **Hold timer:** after 60 seconds, the server passes a card for the holder: the one whose type the holder has the fewest copies of. Ties are broken randomly.
 - **Ring order:** players are seated around a ring in random order, with one constraint: **a player never has their partner directly on either side**. With 2 teams this forces alternating seats.
-- **Open:** if a team is removed mid-game the ring closes up, which can put partners next to each other. Re-seat, or accept it?
+- Seating stays the same across rounds.
+- If a team is removed mid-game, the ring closes up. If that puts partners next to each other, they stay that way for the rest of the round, and players are **reshuffled before the next round** (respecting the no-adjacent-partners rule).
 
 ## 3. Winning a round
 
@@ -35,7 +37,7 @@ Anything not marked is Decided.
 - **Provisional:** a false proclamation made at 0 points removes the proclaimer's right to proclaim for the rest of the game. The alternative is a separate points pool for proclamations. Not decided.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
 - A new round **redeals**, and **suspicion points refresh**. Each round begins with the 2-minute private team chat (see section 1).
-- **Open:** which player gets the extra (passing) card each round, and whether seating is reshuffled.
+- The player who starts with the extra (passing) card is **picked at random** each round. Seating is not reshuffled between rounds, except as described in section 2.
 
 ## 4. Suspicion
 
@@ -80,7 +82,7 @@ Anything not marked is Decided.
 - A team can drop out at any time. After a **1 minute timeout**, if the leaving player holds the passing card it's passed on, and the **whole team is removed** (both partners). Their cards go **back to the pool**. The remaining teams continue.
 - If only **one team is left, it wins by forfeit**. A game needs at least 2 teams.
 - *(Assumed: disconnects follow the same path as dropping out.)*
-- **Open:** whether a forfeit win counts toward leaderboard stats.
+- A forfeit win **does not count** toward leaderboard or duo stats.
 
 ## 9. Stats and leaderboards
 
@@ -88,6 +90,13 @@ Anything not marked is Decided.
 - **Legendary duos:** partners with many wins together.
 - This means every round win must record who **proclaimed** and who **held the cards**, and the team.
 - **Open:** accounts and persistence, which are needed for leaderboards.
+
+## 10. Public chat
+
+- There is a **live public chat**, shown in a pane beside the main view while players pass cards.
+- Everyone in the game sees it. It is a normal part of play: distractions, bluffs, rules arguments and accusations all happen here.
+- Partners may use it for coded messages, knowing opponents can read it.
+- **Open:** whether removed players and spectators can read it, rate limits and moderation, and whether messages are stored.
 
 ---
 

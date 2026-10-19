@@ -48,6 +48,6 @@ Things worth keeping in mind:
 - **Signals fail.** The author's sign was complaining about something. Their partner answered by offering her own water instead of shouting "Jackpot!".
 
 **What it means for the backend:**
-- Per-round private team chat fits, but this account shows partners also **re-coordinating mid-round**. With our locked chat they could only do that through the signals themselves.
-- The distractions suggest a **public social channel** (chat or emotes) may matter to the game's feel. This is not decided.
+- This account shows partners **re-coordinating mid-round**. In our version, private talk happens only in the 2-minute chat before each round. Anything else goes through the signals or the public chat.
+- The distractions are why we have a **live public chat** beside the main view.
 - A hidden tell like a laugh has no digital equivalent. Timing and hesitation may become the tells instead.
