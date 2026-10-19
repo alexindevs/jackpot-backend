@@ -70,6 +70,8 @@ func toInput(in inbound) (room.Input, error) {
 		return room.Ready{Ready: *in.Ready}, nil
 	case "team_chat":
 		return room.TeamChat{Text: in.Text}, nil
+	case "chat":
+		return room.Chat{Text: in.Text}, nil
 	case "pass":
 		if in.Card == nil {
 			return nil, fmt.Errorf("%w: card is required", errBadMessage)
@@ -151,7 +153,7 @@ var errCodes = []struct {
 	{room.ErrAlreadyPaired, "already_paired"}, {room.ErrNoInvite, "no_invite"},
 	{room.ErrDuplicateInvite, "already_invited"}, {room.ErrBadTarget, "bad_target"},
 	{room.ErrWrongPhase, "wrong_phase"}, {room.ErrBadText, "bad_text"},
-	{room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
+	{room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
 	{room.ErrUnpairedPlayers, "unpaired_players"},
 	{engine.ErrNotHolder, "not_holder"}, {engine.ErrNoSuchCard, "no_such_card"},
 	{engine.ErrSelfSuspect, "self_suspect"}, {engine.ErrNoPoints, "no_points"},

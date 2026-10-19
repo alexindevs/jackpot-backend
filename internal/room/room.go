@@ -43,6 +43,7 @@ var (
 	ErrBadTarget       = errors.New("invalid target")
 	ErrWrongPhase      = errors.New("not allowed right now")
 	ErrBadText         = errors.New("message must be 1 to 500 characters")
+	ErrSlowDown        = errors.New("you are sending messages too fast")
 	ErrNotCreator      = errors.New("only the room's creator can do that")
 	ErrTooFewPlayers   = errors.New("not enough players to start")
 	ErrUnpairedPlayers = errors.New("some players don't have a partner yet")
@@ -63,6 +64,11 @@ type Config struct {
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
 	SpectatorsSeeCards bool
 
+	// ChatRatePerSec and ChatBurst limit how fast one player can post to the
+	// public chat. Public chats get spammy.
+	ChatRatePerSec float64
+	ChatBurst      int
+
 	// OnRecord, if set, is told about games starting, rounds being won and
 	// games ending. It runs on the room's goroutine and must not block.
 	OnRecord func(Record)
@@ -80,6 +86,8 @@ func DefaultConfig() Config {
 		ReconnectWindow:    90 * time.Second,
 		EmptyRoomGrace:     time.Minute,
 		SpectatorsSeeCards: true,
+		ChatRatePerSec:     1,
+		ChatBurst:          5,
 	}
 }
 
@@ -111,6 +119,10 @@ type Room struct {
 	dl      *deadlines
 	holdFor engine.PlayerID // whose hold timer is running
 
+	chatSeq  int
+	chatLog  []ChatMessage // the most recent lines, for snapshots
+	chatRate map[engine.PlayerID]*bucket
+
 	out []Out
 }
 
@@ -125,6 +137,7 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		spectators: map[engine.PlayerID]bool{},
 		invites:    map[inviteKey]bool{},
 		dl:         newDeadlines(),
+		chatRate:   map[engine.PlayerID]*bucket{},
 	}
 	_ = r.join(now, creator)
 	r.syncCountdown(now)
@@ -232,6 +245,8 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.setReady(now, from, v.Ready)
 	case TeamChat:
 		return r.teamChat(from, v.Text)
+	case Chat:
+		return r.chat(now, from, v.Text)
 	case Pass:
 		return r.play(now, from, engine.Pass{Player: from, Card: v.Card})
 	case Suspect:

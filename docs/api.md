@@ -51,12 +51,14 @@ A game's summary: who played, on which team, how it ended, and each round's winn
 
 `status` is `playing`, `finished` or `abandoned`. `endReason` is `wins`, `agreement` or `forfeit`. `winnerTeam` is null for a draw or an unfinished game. Cached 10 seconds.
 
-## `GET /api/games/{id}/chat`
+## `GET /api/games/{id}/chat` and `GET /api/rooms/{room}/chat`
 
-The game's public chat from the last 24 hours, oldest first, for settling disputed wins. Needs `Authorization: Bearer <start.ng game session>` and only the players of that game may read it (`403 not_a_player` otherwise). Never cached.
+A game's public chat from the last 24 hours, oldest first. Two addresses for the same thing: by game id (for settling disputes later), or by **room id** (which is what a client in a room knows; it answers for that room's most recent game). Needs `Authorization: Bearer <start.ng game session>`, and only the players of that game may read it (`403 not_a_player` otherwise). Without a session you get `401` whether or not the room exists. Never cached.
+
+Query parameters: `after` (a message number, default 0) returns only lines numbered above it, and `limit` (1 to 200, default 100) caps how many come back. A client polls with `after` set to the last line it has, about once a minute, while its WebSocket is down.
 
 ```json
-[{ "id": 1, "body": "I said it first", "at": "...", "player": { "id": "7", "name": "Trini" } }]
+[{ "id": 1, "text": "I said it first", "at": "...", "player": { "id": "7", "name": "Trini" } }]
 ```
 
-Chat is stored for 24 hours and then deleted. The public chat feature itself is not built yet, so this is empty until it is.
+`id` is the line's number within the game, the same number it had when it was sent live over the WebSocket. Chat is stored for 24 hours and then deleted.

@@ -71,7 +71,7 @@ func TestMigrateIsIdempotentAndSafeToRunTwiceAtOnce(t *testing.T) {
 		}
 	}
 	var n int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 1 {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 2 {
 		t.Errorf("migrations recorded: %d, %v", n, err)
 	}
 }
@@ -291,19 +291,19 @@ func TestChatIsKeptForADayAndThenSwept(t *testing.T) {
 	_ = s.UpsertPlayer(ctx, Player{ID: "a", Name: "Ada"})
 	id, _ := s.StartGame(ctx, "r", t0, [][2]string{{"a", "b"}, {"c", "d"}})
 	for i, age := range []time.Duration{30 * time.Hour, 25 * time.Hour, 23 * time.Hour, time.Hour} {
-		if err := s.AddChat(ctx, id, "a", fmt.Sprintf("msg %d", i), t0.Add(-age)); err != nil {
+		if err := s.AddChat(ctx, id, i+1, "a", fmt.Sprintf("msg %d", i), t0.Add(-age)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.GameChat(ctx, id, t0.Add(-24*time.Hour))
-	if err != nil || len(got) != 2 || got[0].Body != "msg 2" || got[1].Body != "msg 3" || got[0].Player.Name != "Ada" {
+	got, err := s.GameChat(ctx, id, t0.Add(-24*time.Hour), 0, 100)
+	if err != nil || len(got) != 2 || got[0].Text != "msg 2" || got[0].ID != 3 || got[1].Text != "msg 3" || got[0].Player.Name != "Ada" {
 		t.Fatalf("chat = %+v, %v", got, err)
 	}
 	n, err := s.SweepChat(ctx, t0.Add(-24*time.Hour))
 	if err != nil || n != 2 {
 		t.Errorf("swept %d, %v", n, err)
 	}
-	all, _ := s.GameChat(ctx, id, t0.Add(-100*time.Hour))
+	all, _ := s.GameChat(ctx, id, t0.Add(-100*time.Hour), 0, 100)
 	if len(all) != 2 {
 		t.Errorf("after sweeping: %d messages", len(all))
 	}
@@ -315,11 +315,66 @@ func TestChatIsKeptForADayAndThenSwept(t *testing.T) {
 	}
 }
 
+func TestChatCanBeReadIncrementally(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id, _ := s.StartGame(ctx, "r", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	for seq := 1; seq <= 10; seq++ {
+		if err := s.AddChat(ctx, id, seq, "a", fmt.Sprintf("m%d", seq), t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := s.GameChat(ctx, id, t0.Add(-time.Hour), 4, 3)
+	if len(got) != 3 || got[0].ID != 5 || got[2].ID != 7 {
+		t.Errorf("after 4, limit 3: %+v", got)
+	}
+	got, _ = s.GameChat(ctx, id, t0.Add(-time.Hour), 10, 100)
+	if len(got) != 0 {
+		t.Errorf("after the last message there is nothing: %+v", got)
+	}
+	got, _ = s.GameChat(ctx, id, t0.Add(-time.Hour), 0, 100)
+	for i, m := range got {
+		if m.ID != i+1 {
+			t.Fatalf("messages out of order: %+v", got)
+		}
+	}
+}
+
+func TestSavingAChatLineTwiceDoesNotDuplicateIt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id, _ := s.StartGame(ctx, "r", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	for i := 0; i < 3; i++ {
+		if err := s.AddChat(ctx, id, 1, "a", "once", t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := s.GameChat(ctx, id, t0.Add(-time.Hour), 0, 100)
+	if len(got) != 1 {
+		t.Errorf("%d lines", len(got))
+	}
+}
+
+func TestARoomsLatestGame(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if _, err := s.RoomGame(ctx, "nope"); err != ErrNotFound {
+		t.Errorf("unknown room: %v", err)
+	}
+	first, _ := s.StartGame(ctx, "k3m9xq", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	second, _ := s.StartGame(ctx, "k3m9xq", t0.Add(time.Hour), [][2]string{{"a", "b"}, {"c", "d"}})
+	other, _ := s.StartGame(ctx, "other", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	got, err := s.RoomGame(ctx, "k3m9xq")
+	if err != nil || got != second || got == first || got == other {
+		t.Errorf("RoomGame = %d, %v (first %d, second %d, other %d)", got, err, first, second, other)
+	}
+}
+
 func TestDeletingAGameDeletesItsDetails(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	id := play(t, s, [][2]string{{"a", "b"}, {"c", "d"}}, []RoundSummary{round(1, 0, "a", "b")}, nil)
-	_ = s.AddChat(ctx, id, "a", "hi", t0)
+	_ = s.AddChat(ctx, id, 1, "a", "hi", t0)
 	if _, err := s.pool.Exec(ctx, `DELETE FROM games WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}

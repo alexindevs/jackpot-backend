@@ -27,6 +27,8 @@ func TestWriterSavesAWholeGameInOrder(t *testing.T) {
 	w.Record(room.GameStarted{Room: "r1", At: t0, Teams: [][2]engine.PlayerID{{"a", "b"}, {"c", "d"}}})
 	w.Record(room.RoundWon{Room: "r1", At: t0, Round: 1, Team: 0, Proclaimer: "a", Holder: "b"})
 	w.Record(room.RoundWon{Room: "r1", At: t0, Round: 2, Team: 1, Proclaimer: "d", Holder: "c"})
+	w.Record(room.ChatPosted{Room: "r1", At: t0, Seq: 1, Player: "a", Text: "I said it first"})
+	w.Record(room.ChatPosted{Room: "r1", At: t0, Seq: 2, Player: "d", Text: "no you didn't"})
 
 	// While the game runs, its database id is known.
 	eventually(t, "the game to be saved", func() bool { _, ok := w.GameID("r1"); return ok })
@@ -48,6 +50,10 @@ func TestWriterSavesAWholeGameInOrder(t *testing.T) {
 	}
 	if g.Players[0].Player.Name != "Ada" {
 		t.Errorf("player names should come from Seen: %+v", g.Players[0])
+	}
+	chat, _ := s.GameChat(ctx, id, t0.Add(-time.Hour), 0, 100)
+	if len(chat) != 2 || chat[0].Text != "I said it first" || chat[1].ID != 2 || chat[0].Player.Name != "Ada" {
+		t.Errorf("chat = %+v", chat)
 	}
 	if _, ok := w.GameID("r1"); ok {
 		t.Error("a finished game should be forgotten")
@@ -87,9 +93,10 @@ func TestWriterIgnoresRecordsForGamesItNeverSaw(t *testing.T) {
 	w := NewWriter(s, quietLog(), 16)
 	w.Record(room.RoundWon{Room: "ghost", At: t0, Round: 1, Proclaimer: "a", Holder: "b"})
 	w.Record(room.GameFinished{Room: "ghost", At: t0, Abandoned: true})
+	w.Record(room.ChatPosted{Room: "ghost", At: t0, Seq: 1, Player: "a", Text: "hello?"})
 	closeWriter(t, w)
 	var n int
-	_ = s.pool.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM games) + (SELECT count(*) FROM rounds)`).Scan(&n)
+	_ = s.pool.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM games) + (SELECT count(*) FROM rounds) + (SELECT count(*) FROM chat_messages)`).Scan(&n)
 	if n != 0 {
 		t.Errorf("%d rows were written for an unknown game", n)
 	}

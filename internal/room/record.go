@@ -38,7 +38,18 @@ type GameFinished struct {
 	Abandoned bool
 }
 
+// ChatPosted is a line of public chat, to be kept for a day. Seq is the
+// message's number within the game.
+type ChatPosted struct {
+	Room   string
+	At     time.Time
+	Seq    int
+	Player engine.PlayerID
+	Text   string
+}
+
 func (GameStarted) isRecord()  {}
+func (ChatPosted) isRecord()   {}
 func (RoundWon) isRecord()     {}
 func (GameFinished) isRecord() {}
 

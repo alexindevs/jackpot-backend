@@ -122,6 +122,16 @@ func (w *Writer) handle(item any) {
 			return w.s.RecordRound(ctx, id, v.Round, int(v.Team), string(v.Proclaimer), string(v.Holder), v.At)
 		})
 
+	case room.ChatPosted:
+		id, ok := w.GameID(v.Room)
+		if !ok {
+			w.log.Error("chat for a game that was never saved", "room", v.Room, "seq", v.Seq)
+			return
+		}
+		w.try("save chat", func(ctx context.Context) error {
+			return w.s.AddChat(ctx, id, v.Seq, string(v.Player), v.Text, v.At)
+		})
+
 	case room.GameFinished:
 		id, ok := w.GameID(v.Room)
 		if !ok {

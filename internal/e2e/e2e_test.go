@@ -169,15 +169,25 @@ func getJSON(t *testing.T, base, path string, headers ...string) (int, any) {
 	return resp.StatusCode, body
 }
 
-func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
+// stack is the whole server wired together, with a real database.
+type stack struct {
+	db     *store.Store
+	writer *store.Writer
+	srv    *httptest.Server
+	wsURL  string
+}
+
+func newStack(t *testing.T, mod func(*room.Config)) *stack {
+	t.Helper()
 	db := newDB(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	writer := store.NewWriter(db, log, 64)
 
 	cfg := room.DefaultConfig()
-	cfg.Engine.WinsToFinish = 1 // one round decides the game
 	cfg.OnRecord = writer.Record
-
+	if mod != nil {
+		mod(&cfg)
+	}
 	auth := transport.Dev{}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := transport.NewManager(ctx, transport.Config{
@@ -191,13 +201,27 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	mux.Handle("/", m.Handler())
 	srv := httptest.NewServer(mux)
 	t.Cleanup(func() { m.CloseAll(); cancel(); srv.Close(); m.Wait() })
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	return &stack{db: db, writer: writer, srv: srv, wsURL: "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"}
+}
 
-	// Four players, two teams, one room.
-	names := []string{"alice", "bob", "carol", "dave"}
+func (st *stack) drain(t *testing.T) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := st.writer.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+var names = []string{"alice", "bob", "carol", "dave"}
+
+// lobby signs in four players and puts them in one room, paired
+// alice+bob and carol+dave.
+func lobby(t *testing.T, st *stack) (map[string]*client, string) {
+	t.Helper()
 	players := map[string]*client{}
 	for _, n := range names {
-		players[n] = dial(t, wsURL, n)
+		players[n] = dial(t, st.wsURL, n)
 	}
 	created := players["alice"].ok(msg{"type": "create_room"})
 	roomID := created["d"].(map[string]any)["room"].(string)
@@ -208,14 +232,12 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	players["bob"].ok(msg{"type": "accept_partner", "from": "alice"})
 	players["carol"].ok(msg{"type": "invite_partner", "to": "dave"})
 	players["dave"].ok(msg{"type": "accept_partner", "from": "carol"})
+	return players, roomID
+}
 
-	// The public room list shows it while it's in the lobby.
-	status, body := getJSON(t, srv.URL, "/api/rooms")
-	list, _ := body.([]any)
-	if status != 200 || len(list) != 1 || list[0].(map[string]any)["id"] != roomID || list[0].(map[string]any)["players"] != float64(4) {
-		t.Fatalf("rooms = %d %v", status, body)
-	}
-
+// startRound starts the game and the first round.
+func startRound(t *testing.T, players map[string]*client) {
+	t.Helper()
 	players["alice"].ok(msg{"type": "start_now"})
 	for _, n := range names {
 		players[n].ok(msg{"type": "ready", "ready": true})
@@ -223,6 +245,19 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	for _, n := range names {
 		players[n].wait("a hand", func(m msg) bool { return m["t"] == "hand_update" })
 	}
+}
+
+func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
+	st := newStack(t, func(c *room.Config) { c.Engine.WinsToFinish = 1 }) // one round decides the game
+	players, roomID := lobby(t, st)
+
+	// The public room list shows it while it's in the lobby.
+	status, body := getJSON(t, st.srv.URL, "/api/rooms")
+	list, _ := body.([]any)
+	if status != 200 || len(list) != 1 || list[0].(map[string]any)["id"] != roomID || list[0].(map[string]any)["players"] != float64(4) {
+		t.Fatalf("rooms = %d %v", status, body)
+	}
+	startRound(t, players)
 
 	// Play real passes until bob holds four circles, then alice shouts Jackpot.
 	for i := 0; ; i++ {
@@ -264,15 +299,10 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	for _, n := range names {
 		players[n].wait("game over", func(m msg) bool { return m["t"] == "game_event" && m["kind"] == "game_over" })
 	}
+	st.drain(t)
+	base := st.srv.URL
 
-	// Let the writer finish, then read it all back through the REST API.
-	wctx, wcancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer wcancel()
-	if err := writer.Close(wctx); err != nil {
-		t.Fatal(err)
-	}
-
-	status, body = getJSON(t, srv.URL, "/api/leaderboards/mvp?role=proclaimer")
+	status, body = getJSON(t, base, "/api/leaderboards/mvp?role=proclaimer")
 	top := body.([]any)
 	if status != 200 || len(top) != 1 {
 		t.Fatalf("proclaimers = %d %v", status, body)
@@ -280,11 +310,11 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	if p := top[0].(map[string]any); p["wins"] != float64(1) || p["player"].(map[string]any)["name"] != "alice" {
 		t.Errorf("top proclaimer = %v", p)
 	}
-	_, body = getJSON(t, srv.URL, "/api/leaderboards/mvp?role=holder")
+	_, body = getJSON(t, base, "/api/leaderboards/mvp?role=holder")
 	if p := body.([]any)[0].(map[string]any); p["player"].(map[string]any)["id"] != "bob" {
 		t.Errorf("top holder = %v", p)
 	}
-	_, body = getJSON(t, srv.URL, "/api/leaderboards/duos")
+	_, body = getJSON(t, base, "/api/leaderboards/duos")
 	duos := body.([]any)
 	if len(duos) != 1 {
 		t.Fatalf("duos = %v", body)
@@ -295,23 +325,79 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	}
 
 	// The game summary: straight from the database, and over the API.
-	g, err := db.Game(context.Background(), 1)
+	g, err := st.db.Game(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if g.Status != "finished" || len(g.Players) != 4 || len(g.Rounds) != 1 || g.Rounds[0].Proclaimer.ID != "alice" || g.Rounds[0].Holder.ID != "bob" {
 		t.Errorf("game = %+v", g)
 	}
-	status, body = getJSON(t, srv.URL, "/api/games/1")
+	status, body = getJSON(t, base, "/api/games/1")
 	if status != 200 || body.(map[string]any)["endReason"] != "wins" {
 		t.Errorf("game over the API = %d %v", status, body)
 	}
-	// And a player can read the chat endpoint, an outsider can't.
-	if status, _ := getJSON(t, srv.URL, "/api/games/1/chat", "Authorization", "Bearer dev:alice"); status != 200 {
+	if status, _ := getJSON(t, base, "/api/games/1/chat", "Authorization", "Bearer dev:alice"); status != 200 {
 		t.Errorf("a player reading chat: %d", status)
 	}
-	if status, _ := getJSON(t, srv.URL, "/api/games/1/chat", "Authorization", "Bearer dev:mallory"); status != 403 {
+	if status, _ := getJSON(t, base, "/api/games/1/chat", "Authorization", "Bearer dev:mallory"); status != 403 {
 		t.Errorf("an outsider reading chat: %d", status)
+	}
+}
+
+// The public chat goes out live over the sockets, is saved as it happens, and
+// can be caught up on with polling when a client has been disconnected.
+func TestPublicChatIsLiveSavedAndPollable(t *testing.T) {
+	st := newStack(t, nil)
+	players, roomID := lobby(t, st)
+	startRound(t, players)
+
+	players["alice"].ok(msg{"type": "chat", "text": "I said it first"})
+	players["carol"].ok(msg{"type": "chat", "text": "no you didn't"})
+	players["bob"].ok(msg{"type": "chat", "text": "\nit was\nclose"})
+	for _, n := range names {
+		for i := 0; i < 3; i++ {
+			want := i + 1
+			players[n].wait(fmt.Sprintf("chat line %d for %s", want, n), func(m msg) bool {
+				return m["t"] == "chat_message" && m["d"].(map[string]any)["id"] == float64(want)
+			})
+		}
+	}
+	st.drain(t)
+
+	base := st.srv.URL
+	alice := []string{"Authorization", "Bearer dev:alice"}
+	poll := func(path string, h ...string) (int, []any) {
+		status, body := getJSON(t, base, path, h...)
+		list, _ := body.([]any)
+		return status, list
+	}
+
+	status, all := poll("/api/rooms/"+roomID+"/chat", alice...)
+	if status != 200 || len(all) != 3 {
+		t.Fatalf("all chat = %d %v", status, all)
+	}
+	first := all[0].(map[string]any)
+	if first["id"] != float64(1) || first["text"] != "I said it first" || first["player"].(map[string]any)["name"] != "alice" {
+		t.Errorf("first line = %v", first)
+	}
+	if third := all[2].(map[string]any); third["text"] != "it was close" {
+		t.Errorf("a multi-line message should have been tidied: %v", third["text"])
+	}
+
+	// A client that saw lines 1 and 2 live asks for what came after.
+	_, newer := poll("/api/rooms/"+roomID+"/chat?after=2", alice...)
+	if len(newer) != 1 || newer[0].(map[string]any)["id"] != float64(3) {
+		t.Errorf("after=2: %v", newer)
+	}
+	_, none := poll("/api/rooms/"+roomID+"/chat?after=3", alice...)
+	if none == nil || len(none) != 0 {
+		t.Errorf("after the last line there is nothing: %v", none)
+	}
+	if status, _ := poll("/api/rooms/"+roomID+"/chat", "Authorization", "Bearer dev:mallory"); status != 403 {
+		t.Errorf("an outsider polling: %d", status)
+	}
+	if status, _ := poll("/api/rooms/nosuch/chat", alice...); status != 404 {
+		t.Errorf("an unknown room: %d", status)
 	}
 }
 

@@ -81,7 +81,9 @@ func randomInput(d *rand.Rand, r *Room, pick func() engine.PlayerID) Input {
 	if r.phase == PhaseLobby && d.IntN(3) == 0 {
 		return Join{}
 	}
-	switch d.IntN(25) {
+	switch d.IntN(27) {
+	case 25, 26:
+		return Chat{Text: "hello\nthere"}
 	case 24:
 		return StartNow{}
 	case 0:

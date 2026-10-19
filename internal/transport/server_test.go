@@ -368,3 +368,56 @@ func TestAClientThatStopsAnsweringPingsIsDropped(t *testing.T) {
 		t.Fatalf("the server should have closed the connection (read error: %v, ctx: %v)", last, rctx.Err())
 	}
 }
+
+func TestPublicChatOverTheWire(t *testing.T) {
+	g := startedGame(t, nil)
+	fan := dial(t, g.url, "fan")
+	fan.wait("hello", isT("hello"))
+	fan.mustOK(msg{"type": "spectate", "room": g.room})
+
+	g.players["alice"].mustOK(msg{"type": "chat", "text": "I said it first"})
+	say := func(m msg) bool { return m["t"] == "chat_message" }
+	for name, c := range map[string]*client{"alice": g.players["alice"], "bob": g.players["bob"], "carol": g.players["carol"], "dave": g.players["dave"], "fan": fan} {
+		d := data(c.wait("the chat line", say))
+		if d["from"] != "alice" || d["text"] != "I said it first" || d["id"] != float64(1) {
+			t.Errorf("%s got %v", name, d)
+		}
+		if _, ok := d["at"].(string); !ok {
+			t.Errorf("%s: no timestamp in %v", name, d)
+		}
+	}
+
+	if r := fan.request(msg{"type": "chat", "text": "can I join in?"}); data(r)["code"] != "not_player" {
+		t.Errorf("a spectator posting: %v", data(r))
+	}
+	if r := g.players["bob"].request(msg{"type": "chat", "text": "  "}); data(r)["code"] != "bad_text" {
+		t.Errorf("an empty line: %v", data(r))
+	}
+
+	// Posting too fast is refused with its own code.
+	var refused bool
+	for i := 0; i < 8 && !refused; i++ {
+		r := g.players["carol"].request(msg{"type": "chat", "text": "spam"})
+		refused = r["t"] == "error" && data(r)["code"] == "slow_down"
+	}
+	if !refused {
+		t.Error("spamming should hit the rate limit")
+	}
+}
+
+func TestAReconnectingPlayerSeesTheChatTheyMissed(t *testing.T) {
+	g := startedGame(t, nil)
+	alice := g.players["alice"]
+	_ = g.players["bob"].ws.Close(websocket.StatusNormalClosure, "refresh")
+	alice.wait("bob drops", func(m msg) bool {
+		return m["t"] == "connection_changed" && data(m)["player"] == "bob" && data(m)["connected"] == false
+	})
+	alice.mustOK(msg{"type": "chat", "text": "while you were gone"})
+
+	bob2 := dial(t, g.url, "bob")
+	snap := data(bob2.wait("snapshot", isT("snapshot")))
+	lines, _ := snap["chat"].([]any)
+	if len(lines) != 1 || lines[0].(map[string]any)["text"] != "while you were gone" || lines[0].(map[string]any)["id"] != float64(1) {
+		t.Errorf("snapshot chat = %v", snap["chat"])
+	}
+}

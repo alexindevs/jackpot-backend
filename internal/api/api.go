@@ -26,7 +26,8 @@ type Store interface {
 	TopDuos(ctx context.Context, limit int) ([]store.DuoEntry, error)
 	Game(ctx context.Context, id int64) (*store.GameSummary, error)
 	WasPlayer(ctx context.Context, gameID int64, player string) (bool, error)
-	GameChat(ctx context.Context, gameID int64, since time.Time) ([]store.ChatMessage, error)
+	GameChat(ctx context.Context, gameID int64, since time.Time, afterSeq, limit int) ([]store.ChatMessage, error)
+	RoomGame(ctx context.Context, room string) (int64, error)
 }
 
 // Rooms lists the running rooms. *transport.Manager satisfies it.
@@ -43,9 +44,11 @@ type Config struct {
 }
 
 const (
-	defaultLimit = 20
-	maxLimit     = 100
-	maxToken     = 4096
+	defaultLimit     = 20
+	maxLimit         = 100
+	defaultChatLimit = 100
+	maxChatLimit     = 200
+	maxToken         = 4096
 )
 
 type handler struct{ cfg Config }
@@ -64,7 +67,8 @@ func Handler(cfg Config) http.Handler {
 	mux.HandleFunc("GET /api/leaderboards/mvp", h.mvp)
 	mux.HandleFunc("GET /api/leaderboards/duos", h.duos)
 	mux.HandleFunc("GET /api/games/{id}", h.game)
-	mux.HandleFunc("GET /api/games/{id}/chat", h.chat)
+	mux.HandleFunc("GET /api/games/{id}/chat", h.gameChat)
+	mux.HandleFunc("GET /api/rooms/{room}/chat", h.roomChat)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			w.Header().Set("Allow", "GET, OPTIONS")
@@ -213,9 +217,29 @@ func (h *handler) game(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, g)
 }
 
-// chat returns a game's recent chat to someone who played in it. It needs a
-// start.ng game session as a bearer token.
-func (h *handler) chat(w http.ResponseWriter, r *http.Request) {
+// signedIn checks the bearer token. It writes the error response itself and
+// returns false if there is no valid session.
+func (h *handler) signedIn(w http.ResponseWriter, r *http.Request) (transport.Identity, bool) {
+	token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !found || token == "" || len(token) > maxToken {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in to read a game's chat")
+		return transport.Identity{}, false
+	}
+	ident, err := h.cfg.Auth.Authenticate(r.Context(), token)
+	switch {
+	case errors.Is(err, transport.ErrUnauthorized):
+		writeError(w, http.StatusUnauthorized, "unauthorized", "your session has expired; sign in again")
+		return transport.Identity{}, false
+	case err != nil:
+		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "sign-in is unavailable, try again")
+		return transport.Identity{}, false
+	}
+	return ident, true
+}
+
+// gameChat returns a game's recent chat to someone who played in it. It
+// needs a start.ng game session as a bearer token.
+func (h *handler) gameChat(w http.ResponseWriter, r *http.Request) {
 	if !h.needStore(w) {
 		return
 	}
@@ -223,30 +247,62 @@ func (h *handler) chat(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	token, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !found || token == "" || len(token) > maxToken {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "sign in to read a game's chat")
+	ident, ok := h.signedIn(w, r)
+	if !ok {
 		return
 	}
-	ident, err := h.cfg.Auth.Authenticate(r.Context(), token)
-	switch {
-	case errors.Is(err, transport.ErrUnauthorized):
-		writeError(w, http.StatusUnauthorized, "unauthorized", "your session has expired; sign in again")
-		return
-	case err != nil:
-		writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "sign-in is unavailable, try again")
+	h.writeChat(w, r, id, ident)
+}
+
+// roomChat is the same, addressed by room id (which is what a client in a
+// room knows) and answered for the room's most recent game. This is what a
+// client polls, about once a minute, while its WebSocket is down.
+func (h *handler) roomChat(w http.ResponseWriter, r *http.Request) {
+	if !h.needStore(w) {
 		return
 	}
-	played, err := h.cfg.Store.WasPlayer(r.Context(), id, string(ident.ID))
+	ident, ok := h.signedIn(w, r)
+	if !ok {
+		return
+	}
+	id, err := h.cfg.Store.RoomGame(r.Context(), r.PathValue("room"))
+	if err != nil {
+		serverError(w, r, err)
+		return
+	}
+	h.writeChat(w, r, id, ident)
+}
+
+// writeChat answers a chat request once we know the game and who is asking.
+// ?after=N returns only messages numbered above N, and ?limit caps how many.
+func (h *handler) writeChat(w http.ResponseWriter, r *http.Request, gameID int64, ident transport.Identity) {
+	after, limit := 0, defaultChatLimit
+	if raw := r.URL.Query().Get("after"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			writeError(w, http.StatusBadRequest, "bad_request", "after must be 0 or a message number")
+			return
+		}
+		after = n
+	}
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "bad_request", "limit must be a positive number")
+			return
+		}
+		limit = min(n, maxChatLimit)
+	}
+	played, err := h.cfg.Store.WasPlayer(r.Context(), gameID, string(ident.ID))
 	if err != nil {
 		serverError(w, r, err)
 		return
 	}
 	if !played {
-		writeError(w, http.StatusForbidden, "not_a_player", "only the players of a game can read its chat")
+		writeError(w, http.StatusForbidden, "not_a_player", "only the players of a game can read its chat over the API")
 		return
 	}
-	msgs, err := h.cfg.Store.GameChat(r.Context(), id, h.cfg.Now().Add(-h.cfg.ChatRetention))
+	msgs, err := h.cfg.Store.GameChat(r.Context(), gameID, h.cfg.Now().Add(-h.cfg.ChatRetention), after, limit)
 	if err != nil {
 		serverError(w, r, err)
 		return

@@ -54,8 +54,8 @@ func TestLeaderboardsEndToEndOnARealDatabase(t *testing.T) {
 	_ = s.RecordRound(ctx, id, 1, 0, "alice", "bob", now)
 	_ = s.RecordRound(ctx, id, 2, 0, "alice", "bob", now)
 	_ = s.FinishGame(ctx, id, now, store.Outcome{Reason: "wins", WinnerTeam: 0, CountsForStats: true})
-	_ = s.AddChat(ctx, id, "bob", "good game", now.Add(-time.Hour))
-	_ = s.AddChat(ctx, id, "bob", "old news", now.Add(-30*time.Hour))
+	_ = s.AddChat(ctx, id, 1, "bob", "good game", now.Add(-time.Hour))
+	_ = s.AddChat(ctx, id, 2, "bob", "old news", now.Add(-30*time.Hour))
 
 	srv := newAPI(t, func(c *Config) { c.Store = s })
 
@@ -75,7 +75,7 @@ func TestLeaderboardsEndToEndOnARealDatabase(t *testing.T) {
 	}
 	resp, body := get(t, srv, fmt.Sprintf("/api/games/%d/chat", id), "Authorization", "Bearer dev:alice")
 	msgs := body.([]any)
-	if resp.StatusCode != 200 || len(msgs) != 1 || msgs[0].(map[string]any)["body"] != "good game" {
+	if resp.StatusCode != 200 || len(msgs) != 1 || msgs[0].(map[string]any)["text"] != "good game" {
 		t.Errorf("chat = %d %v (messages older than a day must not appear)", resp.StatusCode, body)
 	}
 }

@@ -200,9 +200,23 @@ func (s *Store) AbandonUnfinished(ctx context.Context, at time.Time) (int64, err
 
 // --- chat ---
 
-func (s *Store) AddChat(ctx context.Context, gameID int64, player, body string, at time.Time) error {
-	_, err := s.pool.Exec(ctx, `INSERT INTO chat_messages (game_id, player_id, body, created_at) VALUES ($1, $2, $3, $4)`, gameID, player, body, at)
+// AddChat saves a chat line as message number seq of its game. Saving the
+// same number twice is harmless, so a retry can't duplicate a line.
+func (s *Store) AddChat(ctx context.Context, gameID int64, seq int, player, text string, at time.Time) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO chat_messages (game_id, seq, player_id, body, created_at) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (game_id, seq) DO NOTHING`, gameID, seq, player, text, at)
 	return err
+}
+
+// RoomGame is the most recent game played in a room.
+func (s *Store) RoomGame(ctx context.Context, room string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `SELECT id FROM games WHERE room = $1 ORDER BY id DESC LIMIT 1`, room).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return id, err
 }
 
 // SweepChat deletes chat older than the cutoff.
@@ -442,19 +456,23 @@ func (s *Store) WasPlayer(ctx context.Context, gameID int64, player string) (boo
 	return ok, err
 }
 
+// ChatMessage is one line of a game's public chat. ID is its number within
+// the game, the same one it had when it was sent live.
 type ChatMessage struct {
-	ID     int64
+	ID     int
 	Player PlayerRef
-	Body   string
+	Text   string
 	At     time.Time
 }
 
-// GameChat returns a game's chat since the given time, oldest first.
-func (s *Store) GameChat(ctx context.Context, gameID int64, since time.Time) ([]ChatMessage, error) {
+// GameChat returns a game's chat since the given time, oldest first,
+// starting after message number afterSeq (0 for all) and at most limit lines.
+func (s *Store) GameChat(ctx context.Context, gameID int64, since time.Time, afterSeq, limit int) ([]ChatMessage, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT c.id, c.player_id, p.name, p.style, c.body, c.created_at
+		SELECT c.seq, c.player_id, p.name, p.style, c.body, c.created_at
 		FROM chat_messages c LEFT JOIN players p ON p.id = c.player_id
-		WHERE c.game_id = $1 AND c.created_at >= $2 ORDER BY c.id`, gameID, since)
+		WHERE c.game_id = $1 AND c.created_at >= $2 AND c.seq > $3
+		ORDER BY c.seq LIMIT $4`, gameID, since, afterSeq, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +483,7 @@ func (s *Store) GameChat(ctx context.Context, gameID int64, since time.Time) ([]
 		var pid string
 		var name *string
 		var style []byte
-		if err := rows.Scan(&m.ID, &pid, &name, &style, &m.Body, &m.At); err != nil {
+		if err := rows.Scan(&m.ID, &pid, &name, &style, &m.Text, &m.At); err != nil {
 			return nil, err
 		}
 		m.Player = ref(pid, name, style)

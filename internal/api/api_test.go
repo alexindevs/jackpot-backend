@@ -22,11 +22,14 @@ type fakeStore struct {
 	game    *store.GameSummary
 	players map[int64]map[string]bool
 	chat    []store.ChatMessage
+	rooms   map[string]int64
 	err     error
 
 	gotRole  store.Role
 	gotLimit int
 	gotSince time.Time
+	gotAfter int
+	gotChatN int
 }
 
 func (f *fakeStore) TopPlayers(_ context.Context, role store.Role, limit int) ([]store.MVPEntry, error) {
@@ -49,9 +52,15 @@ func (f *fakeStore) Game(_ context.Context, id int64) (*store.GameSummary, error
 func (f *fakeStore) WasPlayer(_ context.Context, id int64, p string) (bool, error) {
 	return f.players[id][p], f.err
 }
-func (f *fakeStore) GameChat(_ context.Context, _ int64, since time.Time) ([]store.ChatMessage, error) {
-	f.gotSince = since
+func (f *fakeStore) GameChat(_ context.Context, _ int64, since time.Time, after, limit int) ([]store.ChatMessage, error) {
+	f.gotSince, f.gotAfter, f.gotChatN = since, after, limit
 	return f.chat, f.err
+}
+func (f *fakeStore) RoomGame(_ context.Context, room string) (int64, error) {
+	if id, ok := f.rooms[room]; ok {
+		return id, f.err
+	}
+	return 0, store.ErrNotFound
 }
 
 type fakeRooms []room.Info
@@ -226,7 +235,7 @@ func TestGameSummary(t *testing.T) {
 func TestChatNeedsASessionAndAGameYouPlayedIn(t *testing.T) {
 	f := &fakeStore{
 		players: map[int64]map[string]bool{42: {"alice": true}},
-		chat:    []store.ChatMessage{{ID: 1, Player: store.PlayerRef{ID: "alice", Name: "alice"}, Body: "I said it first", At: now}},
+		chat:    []store.ChatMessage{{ID: 1, Player: store.PlayerRef{ID: "alice", Name: "alice"}, Text: "I said it first", At: now}},
 	}
 	srv := newAPI(t, func(c *Config) { c.Store = f })
 
@@ -250,7 +259,7 @@ func TestChatNeedsASessionAndAGameYouPlayedIn(t *testing.T) {
 	}
 	resp, body := get(t, srv, "/api/games/42/chat", "Authorization", "Bearer dev:alice")
 	msgs := body.([]any)
-	if len(msgs) != 1 || msgs[0].(map[string]any)["body"] != "I said it first" {
+	if len(msgs) != 1 || msgs[0].(map[string]any)["text"] != "I said it first" || msgs[0].(map[string]any)["id"] != float64(1) {
 		t.Errorf("messages = %v", body)
 	}
 	if want := now.Add(-24 * time.Hour); !f.gotSince.Equal(want) {
@@ -334,5 +343,68 @@ func TestUnknownPathsAndMethods(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("POST /api/rooms = %d, want 405: the API is read-only", resp.StatusCode)
+	}
+}
+
+func TestChatPollingByRoomAndMessageNumber(t *testing.T) {
+	f := &fakeStore{
+		players: map[int64]map[string]bool{42: {"alice": true}},
+		rooms:   map[string]int64{"k3m9xq": 42},
+		chat:    []store.ChatMessage{{ID: 8, Player: store.PlayerRef{ID: "alice", Name: "alice"}, Text: "latest", At: now}},
+	}
+	srv := newAPI(t, func(c *Config) { c.Store = f })
+	auth := []string{"Authorization", "Bearer dev:alice"}
+
+	resp, body := get(t, srv, "/api/rooms/k3m9xq/chat?after=7&limit=5", auth...)
+	msgs, _ := body.([]any)
+	if resp.StatusCode != 200 || len(msgs) != 1 || msgs[0].(map[string]any)["id"] != float64(8) {
+		t.Fatalf("poll: %d %v", resp.StatusCode, body)
+	}
+	if f.gotAfter != 7 || f.gotChatN != 5 {
+		t.Errorf("after %d, limit %d", f.gotAfter, f.gotChatN)
+	}
+	get(t, srv, "/api/rooms/k3m9xq/chat", auth...)
+	if f.gotAfter != 0 || f.gotChatN != defaultChatLimit {
+		t.Errorf("defaults: after %d, limit %d", f.gotAfter, f.gotChatN)
+	}
+	get(t, srv, "/api/rooms/k3m9xq/chat?limit=99999", auth...)
+	if f.gotChatN != maxChatLimit {
+		t.Errorf("limit should be capped at %d, got %d", maxChatLimit, f.gotChatN)
+	}
+	// The same parameters work on the game route.
+	get(t, srv, "/api/games/42/chat?after=3", auth...)
+	if f.gotAfter != 3 {
+		t.Errorf("game route after = %d", f.gotAfter)
+	}
+
+	cases := []struct {
+		name    string
+		path    string
+		headers []string
+		status  int
+		code    string
+	}{
+		{"no session", "/api/rooms/k3m9xq/chat", nil, 401, "unauthorized"},
+		{"unknown room", "/api/rooms/zzzzzz/chat", auth, 404, "not_found"},
+		{"not a player", "/api/rooms/k3m9xq/chat", []string{"Authorization", "Bearer dev:mallory"}, 403, "not_a_player"},
+		{"bad after", "/api/rooms/k3m9xq/chat?after=-1", auth, 400, "bad_request"},
+		{"bad after text", "/api/rooms/k3m9xq/chat?after=x", auth, 400, "bad_request"},
+		{"bad limit", "/api/rooms/k3m9xq/chat?limit=0", auth, 400, "bad_request"},
+	}
+	for _, c := range cases {
+		resp, body := get(t, srv, c.path, c.headers...)
+		if resp.StatusCode != c.status || errCode(body) != c.code {
+			t.Errorf("%s: %d %v", c.name, resp.StatusCode, body)
+		}
+	}
+}
+
+func TestAnUnknownRoomDoesNotLeakThroughAMissingSession(t *testing.T) {
+	// Without a session you get 401 whether or not the room exists, so room ids can't be probed.
+	srv := newAPI(t, func(c *Config) { c.Store = &fakeStore{rooms: map[string]int64{"real": 1}} })
+	a, _ := get(t, srv, "/api/rooms/real/chat")
+	b, _ := get(t, srv, "/api/rooms/fake/chat")
+	if a.StatusCode != 401 || b.StatusCode != 401 {
+		t.Errorf("statuses %d and %d, want 401 for both", a.StatusCode, b.StatusCode)
 	}
 }

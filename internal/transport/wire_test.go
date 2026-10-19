@@ -107,6 +107,8 @@ func TestClientMessagesBecomeRoomInputs(t *testing.T) {
 		{inbound{Type: "vote_end", Agree: &yes}, room.VoteEnd{Agree: true}, false},
 		{inbound{Type: "vote_end"}, nil, true},
 		{inbound{Type: "proclaim"}, room.Proclaim{}, false},
+		{inbound{Type: "chat", Text: "hello"}, room.Chat{Text: "hello"}, false},
+		{inbound{Type: "team_chat", Text: "psst"}, room.TeamChat{Text: "psst"}, false},
 		{inbound{Type: "launch_missiles"}, nil, true},
 	}
 	for _, c := range cases {

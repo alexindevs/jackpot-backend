@@ -4,12 +4,16 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 )
 
-const maxChatRunes = 500
+const (
+	maxChatRunes = 500
+	maxChatLog   = 100 // lines kept in memory for snapshots
+)
 
 // startChat opens the private team chat before a round.
 func (r *Room) startChat(now time.Time) {
@@ -73,6 +77,71 @@ func (r *Room) teamChat(from engine.PlayerID, text string) error {
 	r.emit(from, msg)
 	r.emit(m.partner, msg)
 	return nil
+}
+
+// chat posts a line to the public chat. Only players still in the game may
+// post, and only once there is a game: spectators and removed players read
+// but can't write. Messages are shown to everyone in the room and recorded.
+func (r *Room) chat(now time.Time, from engine.PlayerID, text string) error {
+	if r.game == nil || r.phase == PhaseLobby || r.phase == PhaseClosed {
+		return ErrWrongPhase
+	}
+	if _, err := r.activeMember(from); err != nil {
+		return err
+	}
+	text = cleanChat(text)
+	if n := utf8.RuneCountInString(text); n == 0 || n > maxChatRunes {
+		return ErrBadText
+	}
+	b := r.chatRate[from]
+	if b == nil {
+		b = newBucket(r.cfg.ChatRatePerSec, r.cfg.ChatBurst, now)
+		r.chatRate[from] = b
+	}
+	if !b.allow(now) {
+		return ErrSlowDown
+	}
+
+	r.chatSeq++
+	msg := ChatMessage{ID: r.chatSeq, From: from, Text: text, At: now}
+	r.chatLog = append(r.chatLog, msg)
+	if over := len(r.chatLog) - maxChatLog; over > 0 {
+		r.chatLog = slices.Clone(r.chatLog[over:])
+	}
+	r.record(ChatPosted{Room: r.id, At: now, Seq: msg.ID, Player: from, Text: text})
+	r.broadcast(msg)
+	return nil
+}
+
+// cleanChat turns line breaks and other control characters into spaces and
+// trims the ends, so a message is always one tidy line.
+func cleanChat(s string) string {
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s))
+}
+
+// bucket is a token bucket: rate tokens per second, up to burst.
+type bucket struct {
+	rate, burst, tokens float64
+	last                time.Time
+}
+
+func newBucket(rate float64, burst int, now time.Time) *bucket {
+	return &bucket{rate: rate, burst: float64(burst), tokens: float64(burst), last: now}
+}
+
+func (b *bucket) allow(now time.Time) bool {
+	b.tokens = min(b.burst, b.tokens+now.Sub(b.last).Seconds()*b.rate)
+	b.last = now
+	if b.tokens < 1 {
+		return false
+	}
+	b.tokens--
+	return true
 }
 
 func (r *Room) startRound(now time.Time) {

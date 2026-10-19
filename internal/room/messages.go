@@ -30,10 +30,12 @@ type (
 	DeclinePartner struct{ From engine.PlayerID }
 )
 
-// Between rounds.
+// Chat. TeamChat is the private chat between rounds; Chat is the public chat
+// everyone in the room can read.
 type (
 	Ready    struct{ Ready bool }
 	TeamChat struct{ Text string }
+	Chat     struct{ Text string }
 )
 
 // During a round. These map one to one onto engine commands.
@@ -57,6 +59,7 @@ func (AcceptPartner) isInput()  {}
 func (DeclinePartner) isInput() {}
 func (Ready) isInput()          {}
 func (TeamChat) isInput()       {}
+func (Chat) isInput()           {}
 func (Pass) isInput()           {}
 func (Suspect) isInput()        {}
 func (Reveal) isInput()         {}
@@ -123,6 +126,15 @@ type (
 		Text string
 	}
 
+	// ChatMessage is one line of the public chat. ID counts up from 1 within
+	// a game, so a client can ask for "everything after the last one I saw".
+	ChatMessage struct {
+		ID   int
+		From engine.PlayerID
+		Text string
+		At   time.Time
+	}
+
 	// GameEvent wraps an engine event, already filtered for the recipient.
 	GameEvent struct{ Event engine.Event }
 
@@ -162,6 +174,7 @@ func (GameStarting) isMessage()       {}
 func (ChatStarted) isMessage()        {}
 func (ReadyChanged) isMessage()       {}
 func (TeamChatMessage) isMessage()    {}
+func (ChatMessage) isMessage()        {}
 func (GameEvent) isMessage()          {}
 func (HandUpdate) isMessage()         {}
 func (TimerStarted) isMessage()       {}

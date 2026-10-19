@@ -105,7 +105,9 @@ Anything not marked is Decided.
 - **Spectators and removed players can read it but can't post.**
 - Messages are **stored for 24 hours**, so disputed wins can be checked.
 - It's expected to get spammy. **Moderation is out of MVP scope** and planned soon after.
-- **Open:** the rate-limit values (a config value is enough for now).
+- Delivered over the **WebSocket**, with a **polling fallback about once a minute** through the REST API for a client whose socket is down.
+- *(Assumed: it opens when the game starts, because chat is stored against a game, and stays open through the rounds and after the game ends, so a disputed win can be argued. There is no public chat in the lobby.)*
+- *(Assumed: each player can post about once a second, in bursts of up to 5, and a line is 1 to 500 characters on one line. These are config values.)*
 
 ## 11. Spectators
 

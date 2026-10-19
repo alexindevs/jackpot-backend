@@ -35,14 +35,15 @@ Every request may carry an `"id"` of any JSON type. It is echoed in the reply. T
 | `invite_partner` | `to` | `to` may be someone not in the room yet; accepting joins them |
 | `accept_partner` / `decline_partner` | `from` | |
 | `ready` | `ready` (bool) | skip the rest of the chat; everyone has to click |
-| `team_chat` | `text` | only between rounds; 1 to 500 characters |
+| `team_chat` | `text` | the private team chat, only between rounds; 1 to 500 characters |
+| `chat` | `text` | the public chat (see below); players only; 1 to 500 characters |
 | `pass` | `card` | holder only |
 | `suspect` | `target` | player id |
 | `reveal` | `types` (list of cards) | answers a `reveal_requested` |
 | `proclaim` | | |
 | `vote_end` | `agree` (bool) | |
 
-Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `game_over`.
+Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`.
 
 A rejected request changes nothing and sends nothing else.
 
@@ -63,7 +64,9 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 
 Invitations are only delivered to people who are connected at that moment. They are not queued.
 
-**Between rounds**: `chat_started {round,endsAt}`, `ready_changed {player,ready}`, `team_chat_message {from,text}`.
+**Between rounds**: `chat_started {round,endsAt}`, `ready_changed {player,ready}`, `team_chat_message {from,text}` (the private team chat; only you and your partner get it).
+
+**Public chat**: `chat_message {id, from, text, at}`. Everyone in the room gets it: players, spectators and removed players. `id` counts up from 1 within the game, so a client can ask for "everything after the last one I saw". Only players still in the game may post (`chat`), from the moment the game starts until the room closes, including between rounds and after the game ends. Spectators and removed players can read but get `not_player` if they post, and there is no public chat in the lobby (`wrong_phase`). Text is trimmed and kept to one line (line breaks become spaces). Each player can post about once a second with a burst of 5; beyond that the server answers `slow_down` and drops the line. `snapshot.chat` carries the last 50 lines, oldest first, so a client that reconnects catches up without asking.
 
 **Playing**
 
@@ -73,6 +76,17 @@ Invitations are only delivered to people who are connected at that moment. They 
 - `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
 
 The card in a `passed` event is only real for the player who passed it and the player who received it; everyone else gets `255`.
+
+## When the socket is down: polling
+
+The public chat is delivered live over the socket. A client whose socket is down can keep up by polling the REST API about once a minute, using the number of the last line it saw:
+
+```
+GET /api/rooms/{room}/chat?after=<last id seen>
+Authorization: Bearer <start.ng game session>
+```
+
+It returns the lines numbered above `after` (see `docs/api.md`). Stop polling when the socket is back: the `snapshot` it sends on reconnect already includes the recent chat. Polling works for the players of the game; spectators get the chat over the socket only.
 
 ## Values and types
 

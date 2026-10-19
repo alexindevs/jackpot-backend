@@ -1,10 +1,15 @@
 package room
 
 import (
+	"slices"
 	"time"
 
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 )
+
+// snapshotChat is how many recent chat lines a snapshot carries, so a player
+// who reconnects sees what they missed without asking.
+const snapshotChat = 50
 
 // PlayerInfo is what everyone may know about a player.
 type PlayerInfo struct {
@@ -47,6 +52,7 @@ type Snapshot struct {
 	Spectators int
 	Timers     []TimerInfo
 	Game       *GameInfo
+	Chat       []ChatMessage // the most recent public chat, oldest first
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
@@ -65,6 +71,7 @@ func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 		s.Timers = append(s.Timers, TimerInfo{Kind: k.kind.label(), Player: k.player, EndsAt: e.at})
 	}
 	sortTimers(s.Timers)
+	s.Chat = slices.Clone(r.chatLog[max(0, len(r.chatLog)-snapshotChat):])
 
 	if g := r.game; g != nil {
 		gi := &GameInfo{
