@@ -36,6 +36,7 @@ var (
 	ErrNotJoinable     = errors.New("the game has already started")
 	ErrRoomFull        = errors.New("room is full")
 	ErrAlreadyMember   = errors.New("already in this room")
+	ErrBadGesture      = errors.New("not a known gesture")
 	ErrNotMember       = errors.New("not in this room")
 	ErrNotPlayer       = errors.New("not a player in this game")
 	ErrAlreadyPaired   = errors.New("already has a partner")
@@ -70,6 +71,15 @@ type Config struct {
 	ChatRatePerSec float64
 	ChatBurst      int
 
+	// Gestures is the fixed vocabulary for signals. TeamSignalChance is the
+	// chance that one signal is seen only by the sender's partner; otherwise
+	// the whole room sees it. SignalRatePerSec and SignalBurst limit how fast
+	// one player can signal.
+	Gestures         []Gesture
+	TeamSignalChance float64
+	SignalRatePerSec float64
+	SignalBurst      int
+
 	// OnRecord, if set, is told about games starting, rounds being won and
 	// games ending. It runs on the room's goroutine and must not block.
 	OnRecord func(Record)
@@ -89,6 +99,10 @@ func DefaultConfig() Config {
 		SpectatorsSeeCards: true,
 		ChatRatePerSec:     1,
 		ChatBurst:          5,
+		Gestures:           DefaultGestures(),
+		TeamSignalChance:   0.2,
+		SignalRatePerSec:   1,
+		SignalBurst:        3,
 	}
 }
 
@@ -123,6 +137,7 @@ type Room struct {
 	chatSeq  int
 	chatLog  []ChatMessage // the most recent lines, for snapshots
 	chatRate map[engine.PlayerID]*bucket
+	sigRate  map[engine.PlayerID]*bucket
 
 	out []Out
 
@@ -142,6 +157,7 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		invites:    map[inviteKey]bool{},
 		dl:         newDeadlines(),
 		chatRate:   map[engine.PlayerID]*bucket{},
+		sigRate:    map[engine.PlayerID]*bucket{},
 		seqs:       map[engine.PlayerID]int64{},
 		logs:       map[engine.PlayerID][]Out{},
 	}
@@ -303,6 +319,8 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.teamChat(from, v.Text)
 	case Chat:
 		return r.chat(now, from, v.Text)
+	case SendSignal:
+		return r.signal(now, from, v.Gesture)
 	case Resume:
 		if r.members[from] == nil && !r.spectators[from] {
 			return ErrNotMember

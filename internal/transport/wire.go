@@ -26,20 +26,21 @@ import (
 
 // inbound is any message from a client.
 type inbound struct {
-	Type   string          `json:"type"`
-	ID     json.RawMessage `json:"id,omitempty"`
-	Key    string          `json:"key,omitempty"` // idempotency key: a retry with the same key is not run twice
-	Token  string          `json:"token,omitempty"`
-	Room   string          `json:"room,omitempty"`
-	To     engine.PlayerID `json:"to,omitempty"`
-	From   engine.PlayerID `json:"from,omitempty"`
-	Target engine.PlayerID `json:"target,omitempty"`
-	Card   *int            `json:"card,omitempty"`
-	Types  []int           `json:"types,omitempty"`
-	Ready  *bool           `json:"ready,omitempty"`
-	Agree  *bool           `json:"agree,omitempty"`
-	Text   string          `json:"text,omitempty"`
-	After  int64           `json:"after,omitempty"` // resume: the last sequence number the client has seen
+	Type    string          `json:"type"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Key     string          `json:"key,omitempty"` // idempotency key: a retry with the same key is not run twice
+	Token   string          `json:"token,omitempty"`
+	Room    string          `json:"room,omitempty"`
+	To      engine.PlayerID `json:"to,omitempty"`
+	From    engine.PlayerID `json:"from,omitempty"`
+	Target  engine.PlayerID `json:"target,omitempty"`
+	Card    *int            `json:"card,omitempty"`
+	Types   []int           `json:"types,omitempty"`
+	Ready   *bool           `json:"ready,omitempty"`
+	Agree   *bool           `json:"agree,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Gesture string          `json:"gesture,omitempty"`
+	After   int64           `json:"after,omitempty"` // resume: the last sequence number the client has seen
 }
 
 var errBadMessage = errors.New("malformed message")
@@ -74,6 +75,8 @@ func toInput(in inbound) (room.Input, error) {
 		return room.TeamChat{Text: in.Text}, nil
 	case "chat":
 		return room.Chat{Text: in.Text}, nil
+	case "signal":
+		return room.SendSignal{Gesture: in.Gesture}, nil
 	case "resume":
 		if in.After < 0 {
 			return nil, fmt.Errorf("%w: after must not be negative", errBadMessage)
@@ -173,7 +176,7 @@ var errCodes = []struct {
 	{room.ErrAlreadyPaired, "already_paired"}, {room.ErrNoInvite, "no_invite"},
 	{room.ErrDuplicateInvite, "already_invited"}, {room.ErrBadTarget, "bad_target"},
 	{room.ErrWrongPhase, "wrong_phase"}, {room.ErrBadText, "bad_text"},
-	{room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
+	{room.ErrBadGesture, "bad_gesture"}, {room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
 	{room.ErrUnpairedPlayers, "unpaired_players"},
 	{engine.ErrNotHolder, "not_holder"}, {engine.ErrNoSuchCard, "no_such_card"},
 	{engine.ErrSelfSuspect, "self_suspect"}, {engine.ErrNoPoints, "no_points"},

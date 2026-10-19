@@ -28,6 +28,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | --- | --- | --- |
 | `ping` | | replies `pong` |
 | `list_rooms` | | replies `rooms` |
+| `signal` | `gesture` | send a gesture (an `id` from the snapshot's `gestures`); only during a round |
 | `resume` | `after` | after reconnecting: replays what you missed (see below). `after` is the last `s` you saw, or 0 |
 | `create_room` | | replies `room_created`; you are in the room |
 | `join` | `room` | become a player (lobby only) |
@@ -56,12 +57,13 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 
 **Account and rooms**
 
+- `signal`: `{from, gesture, scope}`. `scope` is `team` (only you and your partner see it) or `room`; on your own signals it is empty. Numbered with `s`. To show it, find the gesture in the snapshot's `gestures` and write `<name> <seen>`.
 - `heartbeat`: `{serverTime}`, sent every 20 seconds whether or not anything else is happening. If nothing at all arrives for about 50 seconds, treat the connection as dead and reconnect.
 - `hello`: `{you:{id,name,style}, serverTime}`. Use `serverTime` to correct clock differences when showing countdowns.
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
 - `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable}`.
 - `room_created`: `{room}`.
-- `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. `{room,creator,phase,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
+- `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.
 
 **Lobby**: `member_joined {player}`, `member_left {player,reason}`, `room_invite {from,room}`, `partner_invite {from,to,room}`, `partner_declined {by}`, `team_formed {a,b}`, `team_broken {a,b}`, `countdown_started {endsAt}`, `countdown_cancelled`, `game_starting {teams:[[a,b]],demoted:[],seats:[...],suspicionPoints,winsToFinish}`. A team's id is its index in `teams`. `seats` is the ring order, clockwise: the holder passes to the next entry, wrapping around. `suspicionPoints` (3) is what every player has at the start of every round, and `winsToFinish` (7) ends the game. Demoted players are now spectators. If the ring is reshuffled between rounds you get a `seats_reshuffled` game event with the new order.

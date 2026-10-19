@@ -54,10 +54,11 @@ type Snapshot struct {
 	Game       *GameInfo
 	Chat       []ChatMessage // the most recent public chat, oldest first
 	Seq        int64         // the recipient's sequence number as of this snapshot
+	Gestures   []Gesture     // the signal vocabulary
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
-	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer]}
+	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer], Gestures: slices.Clone(r.cfg.Gestures)}
 	for _, id := range r.order {
 		m := r.members[id]
 		s.Players = append(s.Players, PlayerInfo{

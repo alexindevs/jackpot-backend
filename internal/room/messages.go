@@ -38,6 +38,10 @@ type (
 	Chat     struct{ Text string }
 )
 
+// SendSignal is a gesture sent during a round. It is private to the partner or
+// shown to the room, rolled once per signal. The sender is never told which.
+type SendSignal struct{ Gesture string }
+
 // Resume asks for everything sent to the sender after sequence number After.
 type Resume struct{ After int64 }
 
@@ -64,6 +68,7 @@ func (Ready) isInput()          {}
 func (TeamChat) isInput()       {}
 func (Chat) isInput()           {}
 func (Resume) isInput()         {}
+func (SendSignal) isInput()     {}
 func (Pass) isInput()           {}
 func (Suspect) isInput()        {}
 func (Reveal) isInput()         {}
@@ -140,6 +145,14 @@ type (
 		At   time.Time
 	}
 
+	// Signal is a gesture someone made. Scope is "team" (only the sender's
+	// partner sees it) or "room"; the sender's own copy leaves it empty.
+	Signal struct {
+		From    engine.PlayerID
+		Gesture string
+		Scope   string
+	}
+
 	// GameEvent wraps an engine event, already filtered for the recipient.
 	GameEvent struct{ Event engine.Event }
 
@@ -190,6 +203,7 @@ func (ReadyChanged) isMessage()       {}
 func (TeamChatMessage) isMessage()    {}
 func (ChatMessage) isMessage()        {}
 func (GameEvent) isMessage()          {}
+func (Signal) isMessage()             {}
 func (HandUpdate) isMessage()         {}
 func (TimerStarted) isMessage()       {}
 func (ConnectionChanged) isMessage()  {}

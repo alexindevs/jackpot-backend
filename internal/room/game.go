@@ -325,3 +325,44 @@ func (r *Room) reconnectExpired(at time.Time, id engine.PlayerID) {
 	}
 	_ = r.dropTeam(at, m.team)
 }
+
+// signal sends a gesture. Signals are how partners coordinate once a round has
+// started, so they only work while one is running. Each signal rolls its own
+// visibility: with probability TeamSignalChance only the sender's partner
+// sees it, otherwise everyone does. The sender isn't told which, the way you
+// can't know who noticed a wink at a real table.
+func (r *Room) signal(now time.Time, from engine.PlayerID, gesture string) error {
+	m, err := r.activeMember(from)
+	if err != nil {
+		return err
+	}
+	if r.phase != PhasePlaying {
+		return ErrWrongPhase
+	}
+	if !slices.ContainsFunc(r.cfg.Gestures, func(g Gesture) bool { return g.ID == gesture }) {
+		return ErrBadGesture
+	}
+	b := r.sigRate[from]
+	if b == nil {
+		b = newBucket(r.cfg.SignalRatePerSec, r.cfg.SignalBurst, now)
+		r.sigRate[from] = b
+	}
+	if !b.allow(now) {
+		return ErrSlowDown
+	}
+
+	if r.rng.Float64() < r.cfg.TeamSignalChance {
+		msg := Signal{From: from, Gesture: gesture, Scope: "team"}
+		r.emit(from, Signal{From: from, Gesture: gesture})
+		r.emit(m.partner, msg)
+		return nil
+	}
+	for _, id := range r.audience() {
+		s := Signal{From: from, Gesture: gesture, Scope: "room"}
+		if id == from {
+			s.Scope = ""
+		}
+		r.emit(id, s)
+	}
+	return nil
+}

@@ -63,12 +63,15 @@ Anything not marked is Decided.
 
 ## 5. Signalling
 
-- Players send gestures from a **fixed vocabulary**. Fake signals are allowed and use the same mechanism as real ones. The server doesn't need to tell them apart. Only the players have to.
+- Players send gestures from a **fixed vocabulary of about 200** ordinary human things: sneezing, blinking once, twice or thrice, rubbing your nose, a belch, a hiccup, humming, saying "oya", "abeg" or "wetin dey", singing a line, mentioning jollof. They are listed in `internal/room/gestures.go`, in groups (eyes and face, noises, hands, posture, food and objects, singing, phrases, random behaviour). Fake signals are allowed and use the same mechanism as real ones. The server doesn't tell them apart. Only the players have to.
+- Signals only work **while a round is running**, not in the pre-round chat. Only players still in the game can send them.
 - **Visibility is rolled once per signal:**
   - 20% of signals go to the sender's partner only (`team` scope).
-  - 80% go to everyone, including the partner (`room` scope).
-  - Both numbers should be config values.
-- **Open:** the gesture vocabulary itself.
+  - 80% go to everyone, including the partner and spectators (`room` scope).
+  - Both numbers are config values (`TeamSignalChance`, the vocabulary).
+- *(Assumed: the sender is **not told** which scope was rolled, the way you can't know who noticed a wink at a real table. Their own copy of the signal carries no scope.)*
+- *(Assumed: a player can signal about once a second, in bursts of 3. Config values.)*
+- *(Assumed: the list is a first draft. Adding or removing gestures is a one-line change.)*
 
 ## 6. Concurrency
 

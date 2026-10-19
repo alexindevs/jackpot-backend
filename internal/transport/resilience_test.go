@@ -412,3 +412,31 @@ func TestResumeOutsideARoomIsRefusedAndNegativeIsMalformed(t *testing.T) {
 		t.Errorf("negative: %v", r)
 	}
 }
+
+// --- signals ---
+
+func TestSignalsOverTheWire(t *testing.T) {
+	g := startedGame(t, func(c *Config) { c.Room.TeamSignalChance = 0 })
+	alice := g.players["alice"]
+	snap := data(alice.wait("snapshot", isT("snapshot")))
+	gestures, _ := snap["gestures"].([]any)
+	if len(gestures) < 190 {
+		t.Fatalf("a snapshot should list the vocabulary: %d", len(gestures))
+	}
+	first := gestures[0].(map[string]any)
+	if first["id"] == nil || first["label"] == nil || first["seen"] == nil || first["group"] == nil {
+		t.Errorf("gesture fields: %v", first)
+	}
+
+	alice.mustOK(msg{"type": "signal", "gesture": "sneeze"})
+	for _, name := range []string{"bob", "carol", "dave"} {
+		s := g.players[name].wait("the signal", isT("signal"))
+		d := data(s)
+		if d["from"] != "alice" || d["gesture"] != "sneeze" || d["scope"] != "room" || s["s"] == nil {
+			t.Errorf("%s saw %v", name, s)
+		}
+	}
+	if r := alice.request(msg{"type": "signal", "gesture": "backflip"}); data(r)["code"] != "bad_gesture" {
+		t.Errorf("unknown gesture: %v", r)
+	}
+}
