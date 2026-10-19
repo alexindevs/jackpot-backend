@@ -52,10 +52,11 @@ type Snapshot struct {
 	Spectators  int
 	Timers      []TimerInfo
 	Game        *GameInfo
-	Chat        []ChatMessage // the most recent public chat, oldest first
-	Seq         int64         // the recipient's sequence number as of this snapshot
-	Gestures    []Gesture     // the signal vocabulary
-	PausedUntil *time.Time    // set while the game is paused, waiting for its players
+	Chat        []ChatMessage     // the most recent public chat, oldest first
+	Seq         int64             // the recipient's sequence number as of this snapshot
+	Gestures    []Gesture         // the signal vocabulary
+	PausedUntil *time.Time        // set while the game is paused, waiting for its players
+	TeamChat    []TeamChatMessage // your team's private chat so far, oldest first
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
@@ -79,6 +80,10 @@ func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 	}
 	sortTimers(s.Timers)
 	s.Chat = slices.Clone(r.chatLog[max(0, len(r.chatLog)-snapshotChat):])
+	if m := r.members[viewer]; m != nil && !m.removed && r.game != nil {
+		tl := r.teamLog[m.team]
+		s.TeamChat = slices.Clone(tl[max(0, len(tl)-snapshotChat*2):])
+	}
 
 	if g := r.game; g != nil {
 		gi := &GameInfo{

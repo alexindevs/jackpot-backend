@@ -1,8 +1,10 @@
 package room
 
 import (
+	"cmp"
 	"errors"
 	"math/rand/v2"
+	"reflect"
 	"slices"
 	"time"
 
@@ -52,9 +54,27 @@ type RosterEntry struct {
 // Roster lists the players still in the game.
 func (r *Room) Roster() []RosterEntry {
 	var out []RosterEntry
+	pairs := map[engine.PlayerID]engine.TeamID{} // lobby teams are numbered in join order
+	if r.game == nil {
+		for _, id := range r.order {
+			if p := r.members[id].partner; p != "" {
+				if _, seen := pairs[p]; !seen {
+					pairs[id] = engine.TeamID(len(pairs) / 2)
+					pairs[p] = pairs[id]
+				}
+			}
+		}
+	}
 	for _, id := range r.order {
 		if m := r.members[id]; m != nil && !m.removed {
-			out = append(out, RosterEntry{ID: id, Team: m.team, Connected: m.connected})
+			team := m.team
+			if r.game == nil {
+				team = -1 // no partner yet
+				if t, ok := pairs[id]; ok {
+					team = t
+				}
+			}
+			out = append(out, RosterEntry{ID: id, Team: team, Connected: m.connected})
 		}
 	}
 	return out
@@ -116,6 +136,9 @@ func (r *Room) resume(now time.Time) {
 	r.dl = newDeadlines()
 	r.holdFor = ""
 	r.broadcast(Resumed{})
+	if r.game == nil { // a lobby: the countdown starts again if there are enough people
+		return
+	}
 	switch r.game.Phase() {
 	case engine.PhaseOver:
 		r.phase = PhaseOver
@@ -136,7 +159,18 @@ type Saved struct {
 	Commands []engine.Command
 	ChatSeq  int
 	Chat     []ChatMessage // the most recent public chat, oldest first
-	Since    time.Time     // when the game was last active
+	TeamChat []TeamChatEntry
+	Since    time.Time // when the game was last active
+}
+
+// TeamChatEntry is a saved line of private team chat.
+type TeamChatEntry struct {
+	Seq   int
+	Round int
+	Team  engine.TeamID
+	From  engine.PlayerID
+	Text  string
+	At    time.Time
 }
 
 // Restore rebuilds a room from a Saved game. The room comes back paused, with
@@ -172,6 +206,16 @@ func Restore(cfg Config, sv Saved, now time.Time) (*Room, error) {
 		cmdSeq:     len(sv.Commands),
 		chatSeq:    sv.ChatSeq,
 		chatLog:    slices.Clone(sv.Chat),
+		teamLog:    map[engine.TeamID][]TeamChatMessage{},
+	}
+	for _, e := range sv.TeamChat {
+		r.teamLog[e.Team] = append(r.teamLog[e.Team], TeamChatMessage{ID: e.Seq, Round: e.Round, From: e.From, Text: e.Text, At: e.At})
+		r.teamSeq = max(r.teamSeq, e.Seq)
+	}
+	for t, l := range r.teamLog {
+		if over := len(l) - maxTeamLog; over > 0 {
+			r.teamLog[t] = slices.Clone(l[over:])
+		}
 	}
 	partner := map[engine.PlayerID]engine.PlayerID{}
 	for _, a := range sv.Setup.Specs {
@@ -193,5 +237,111 @@ func Restore(cfg Config, sv Saved, now time.Time) (*Room, error) {
 	r.paused = true
 	r.pausedUntil = until
 	r.dl.set(dkey{kind: dkPause}, until)
+	return r, nil
+}
+
+// reportLobby tells OnRecord about the lobby when it has changed, so it can be
+// saved. When the room stops being a lobby it says so once, so the saved copy
+// can be removed.
+func (r *Room) reportLobby(now time.Time) {
+	if r.cfg.OnRecord == nil {
+		return
+	}
+	if r.phase != PhaseLobby {
+		if r.savedLobby != nil {
+			r.savedLobby = nil
+			r.record(LobbyState{Room: r.id, At: now, Creator: r.creator, Gone: true})
+		}
+		return
+	}
+	st := LobbyState{Room: r.id, At: now, Creator: r.creator, Members: slices.Clone(r.order)}
+	for _, id := range r.order {
+		if p := r.members[id].partner; p != "" && id < p {
+			st.Pairs = append(st.Pairs, [2]engine.PlayerID{id, p})
+		}
+	}
+	for k := range r.invites {
+		st.Invites = append(st.Invites, [2]engine.PlayerID{k.from, k.to})
+	}
+	slices.SortFunc(st.Invites, func(a, b [2]engine.PlayerID) int {
+		if a[0] != b[0] {
+			return cmp.Compare(a[0], b[0])
+		}
+		return cmp.Compare(a[1], b[1])
+	})
+	if r.savedLobby != nil && sameLobby(*r.savedLobby, st) {
+		return
+	}
+	r.savedLobby = &st
+	r.record(st)
+}
+
+func sameLobby(a, b LobbyState) bool {
+	a.At, b.At = time.Time{}, time.Time{}
+	return reflect.DeepEqual(a, b)
+}
+
+// SavedLobby is a saved lobby, to bring back with RestoreLobby.
+type SavedLobby struct {
+	ID      string
+	Creator engine.PlayerID
+	Members []engine.PlayerID
+	Pairs   [][2]engine.PlayerID
+	Invites [][2]engine.PlayerID
+	Since   time.Time // when the lobby last changed
+}
+
+// RestoreLobby rebuilds a lobby after a restart. It comes back paused with
+// nobody connected: its members find it in their paused games and go back, and
+// the countdown starts again once they all have. It is closed if nobody does
+// within Config.LobbyPausedFor of the last change.
+func RestoreLobby(cfg Config, sl SavedLobby, now time.Time) (*Room, error) {
+	if len(sl.Members) == 0 {
+		return nil, errors.New("the lobby had no members")
+	}
+	until := sl.Since.Add(cfg.LobbyPausedFor)
+	if !until.After(now) {
+		return nil, errors.New("the lobby waited too long for its members")
+	}
+	r := &Room{
+		id:         sl.ID,
+		creator:    sl.Creator,
+		cfg:        cfg,
+		rng:        rand.New(rand.NewPCG(uint64(now.UnixNano()), uint64(len(sl.Members)))),
+		members:    map[engine.PlayerID]*member{},
+		spectators: map[engine.PlayerID]bool{},
+		invites:    map[inviteKey]bool{},
+		dl:         newDeadlines(),
+		chatRate:   map[engine.PlayerID]*bucket{},
+		sigRate:    map[engine.PlayerID]*bucket{},
+		seqs:       map[engine.PlayerID]int64{},
+		logs:       map[engine.PlayerID][]Out{},
+		teamLog:    map[engine.TeamID][]TeamChatMessage{},
+		phase:      PhaseLobby,
+	}
+	for _, id := range sl.Members {
+		if r.members[id] != nil {
+			return nil, errors.New("a member is listed twice")
+		}
+		r.members[id] = &member{id: id}
+		r.order = append(r.order, id)
+	}
+	for _, p := range sl.Pairs {
+		a, b := r.members[p[0]], r.members[p[1]]
+		if a == nil || b == nil || a.partner != "" || b.partner != "" {
+			return nil, errors.New("the lobby's pairs don't match its members")
+		}
+		a.partner, b.partner = p[1], p[0]
+	}
+	for _, iv := range sl.Invites {
+		if r.members[iv[0]] != nil && r.members[iv[1]] != nil {
+			r.invites[inviteKey{iv[0], iv[1]}] = true
+		}
+	}
+	r.paused = true
+	r.pausedUntil = until
+	r.dl.set(dkey{kind: dkPause}, until)
+	st := LobbyState{Room: sl.ID, Creator: sl.Creator, Members: slices.Clone(r.order), Pairs: sl.Pairs, Invites: sl.Invites}
+	r.savedLobby = &st
 	return r, nil
 }

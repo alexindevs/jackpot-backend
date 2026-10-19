@@ -88,6 +88,7 @@ type LiveGame struct {
 	LastActive time.Time
 	ChatSeq    int
 	Chat       []ChatMessage // the most recent lines, oldest first
+	TeamChat   []TeamChatLine
 }
 
 // LiveGames loads every game still marked as playing that has saved setup. A
@@ -169,6 +170,9 @@ func (s *Store) LiveGames(ctx context.Context, chatTail int) (live []LiveGame, b
 			chat = chat[len(chat)-chatTail:]
 		}
 		lg.Chat = chat
+		if lg.TeamChat, err = s.GameTeamChat(ctx, h.id); err != nil {
+			return nil, nil, err
+		}
 		live = append(live, lg)
 	}
 	return live, bad, nil
@@ -195,6 +199,14 @@ func (s *Store) SweepExpired(ctx context.Context, endedBefore time.Time) (int64,
 	if _, err := tx.Exec(ctx, `
 		DELETE FROM chat_messages c USING games g
 		WHERE c.game_id = g.id AND g.status <> 'playing' AND g.ended_at < $1`, endedBefore); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM team_chat_messages c USING games g
+		WHERE c.game_id = g.id AND g.status <> 'playing' AND g.ended_at < $1`, endedBefore); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM lobbies WHERE updated_at < $1`, endedBefore); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -258,4 +270,105 @@ func (s *Store) Players(ctx context.Context, ids []string) ([]Player, error) {
 func (s *Store) CommandCount(ctx context.Context, gameID int64) (count, maxSeq int, err error) {
 	err = s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(max(seq), 0) FROM game_events WHERE game_id = $1`, gameID).Scan(&count, &maxSeq)
 	return
+}
+
+// --- lobbies and private team chat ---
+
+// LobbyRow is a saved lobby.
+type LobbyRow struct {
+	Room      string
+	Creator   string
+	Members   []string
+	Pairs     [][2]string
+	Invites   [][2]string
+	UpdatedAt time.Time
+}
+
+type lobbyState struct {
+	Members []string    `json:"members"`
+	Pairs   [][2]string `json:"pairs"`
+	Invites [][2]string `json:"invites"`
+}
+
+// SaveLobby keeps a lobby as it stands now, replacing what was kept before.
+func (s *Store) SaveLobby(ctx context.Context, l LobbyRow) error {
+	b, err := json.Marshal(lobbyState{Members: l.Members, Pairs: l.Pairs, Invites: l.Invites})
+	if err != nil {
+		return err
+	}
+	_, err = s.pool.Exec(ctx, `
+		INSERT INTO lobbies (room, creator, state, updated_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (room) DO UPDATE SET creator = EXCLUDED.creator, state = EXCLUDED.state, updated_at = EXCLUDED.updated_at
+		WHERE lobbies.updated_at <= EXCLUDED.updated_at`, l.Room, l.Creator, b, l.UpdatedAt)
+	return err
+}
+
+// DeleteLobby forgets a saved lobby.
+func (s *Store) DeleteLobby(ctx context.Context, room string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM lobbies WHERE room = $1`, room)
+	return err
+}
+
+// Lobbies loads every saved lobby. Rows that can't be read are reported in bad,
+// by room, and left for the caller to delete.
+func (s *Store) Lobbies(ctx context.Context) (ok []LobbyRow, bad map[string]error, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT room, creator, state, updated_at FROM lobbies ORDER BY room`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	bad = map[string]error{}
+	for rows.Next() {
+		var l LobbyRow
+		var raw []byte
+		if err := rows.Scan(&l.Room, &l.Creator, &raw, &l.UpdatedAt); err != nil {
+			return nil, nil, err
+		}
+		var st lobbyState
+		if err := json.Unmarshal(raw, &st); err != nil {
+			bad[l.Room] = err
+			continue
+		}
+		l.Members, l.Pairs, l.Invites = st.Members, st.Pairs, st.Invites
+		ok = append(ok, l)
+	}
+	return ok, bad, rows.Err()
+}
+
+// TeamChatLine is a saved line of private team chat.
+type TeamChatLine struct {
+	Seq    int
+	Team   int
+	Round  int
+	Player string
+	Text   string
+	At     time.Time
+}
+
+// AddTeamChat saves line number seq of a game's private team chat. Saving the
+// same number twice is harmless.
+func (s *Store) AddTeamChat(ctx context.Context, gameID int64, l TeamChatLine) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO team_chat_messages (game_id, seq, team, round, player_id, body, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (game_id, seq) DO NOTHING`, gameID, l.Seq, l.Team, l.Round, l.Player, l.Text, l.At)
+	return err
+}
+
+// GameTeamChat loads a game's private team chat, oldest first.
+func (s *Store) GameTeamChat(ctx context.Context, gameID int64) ([]TeamChatLine, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT seq, team, round, player_id, body, created_at FROM team_chat_messages WHERE game_id = $1 ORDER BY seq`, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []TeamChatLine
+	for rows.Next() {
+		var l TeamChatLine
+		if err := rows.Scan(&l.Seq, &l.Team, &l.Round, &l.Player, &l.Text, &l.At); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }

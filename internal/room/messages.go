@@ -131,9 +131,14 @@ type (
 		Player engine.PlayerID
 		Ready  bool
 	}
+	// TeamChatMessage is one line of the private chat between partners. ID
+	// counts up from 1 within the game; Round is the round the chat leads up to.
 	TeamChatMessage struct {
-		From engine.PlayerID
-		Text string
+		ID    int
+		Round int
+		From  engine.PlayerID
+		Text  string
+		At    time.Time
 	}
 
 	// ChatMessage is one line of the public chat. ID counts up from 1 within

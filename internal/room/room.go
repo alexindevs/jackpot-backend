@@ -63,6 +63,7 @@ type Config struct {
 	PromptTimeout   time.Duration // reveal and forced-pass prompts
 	ReconnectWindow time.Duration // a disconnected player's time to come back
 	EmptyRoomGrace  time.Duration // nobody connected for this long closes a lobby, or pauses a game
+	LobbyPausedFor  time.Duration // a restored lobby waits this long for its members before it is closed
 	PausedFor       time.Duration // a paused game waits this long for its players before it is abandoned
 
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
@@ -99,6 +100,7 @@ func DefaultConfig() Config {
 		ReconnectWindow:    90 * time.Second,
 		EmptyRoomGrace:     time.Minute,
 		PausedFor:          24 * time.Hour,
+		LobbyPausedFor:     time.Hour,
 		SpectatorsSeeCards: true,
 		ChatRatePerSec:     1,
 		ChatBurst:          5,
@@ -138,15 +140,18 @@ type Room struct {
 	holdFor engine.PlayerID // whose hold timer is running
 
 	chatSeq  int
-	chatLog  []ChatMessage // the most recent lines, for snapshots
+	teamSeq  int                                 // private team chat lines so far, across all teams
+	teamLog  map[engine.TeamID][]TeamChatMessage // each team's private chat, for snapshots
+	chatLog  []ChatMessage                       // the most recent lines, for snapshots
 	chatRate map[engine.PlayerID]*bucket
 	sigRate  map[engine.PlayerID]*bucket
 
 	out []Out
 
-	paused      bool      // a game waiting for its players to come back
-	pausedUntil time.Time // when a paused game is abandoned
-	cmdSeq      int       // engine commands applied so far, for the saved log
+	savedLobby  *LobbyState // the last lobby state reported, to report only changes
+	paused      bool        // a game waiting for its players to come back
+	pausedUntil time.Time   // when a paused game is abandoned
+	cmdSeq      int         // engine commands applied so far, for the saved log
 
 	seqs map[engine.PlayerID]int64 // last sequence number given to each recipient
 	logs map[engine.PlayerID][]Out // what each recipient was last sent, for replay
@@ -167,10 +172,12 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		sigRate:    map[engine.PlayerID]*bucket{},
 		seqs:       map[engine.PlayerID]int64{},
 		logs:       map[engine.PlayerID][]Out{},
+		teamLog:    map[engine.TeamID][]TeamChatMessage{},
 	}
 	_ = r.join(now, creator)
 	r.syncCountdown(now)
 	r.updateEmpty(now)
+	r.reportLobby(now)
 	return r, r.take()
 }
 
@@ -276,9 +283,10 @@ func (r *Room) Handle(now time.Time, from engine.PlayerID, in Input) ([]Out, err
 		r.out = nil
 		return nil, err
 	}
-	r.syncCountdown(now)
 	r.maybeResume(now)
+	r.syncCountdown(now)
 	r.updateEmpty(now)
+	r.reportLobby(now)
 	return r.take(), nil
 }
 
@@ -295,6 +303,7 @@ func (r *Room) Tick(now time.Time) []Out {
 	}
 	r.syncCountdown(now)
 	r.updateEmpty(now)
+	r.reportLobby(now)
 	return r.take()
 }
 
@@ -303,10 +312,19 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return ErrClosed
 	}
 	if r.paused {
-		switch in.(type) {
-		case Connect, Disconnect, Leave, Spectate, Chat, Resume:
-		default:
-			return ErrPaused
+		if r.game == nil {
+			// A restored lobby keeps working for the people in it. What waits
+			// for everyone is the countdown, and new people joining.
+			switch in.(type) {
+			case Join, StartNow:
+				return ErrPaused
+			}
+		} else {
+			switch in.(type) {
+			case Connect, Disconnect, Leave, Spectate, Chat, Resume:
+			default:
+				return ErrPaused
+			}
 		}
 	}
 	switch v := in.(type) {
@@ -333,7 +351,7 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 	case Ready:
 		return r.setReady(now, from, v.Ready)
 	case TeamChat:
-		return r.teamChat(from, v.Text)
+		return r.teamChat(now, from, v.Text)
 	case Chat:
 		return r.chat(now, from, v.Text)
 	case SendSignal:
@@ -467,7 +485,7 @@ func (r *Room) leaveLobby(now time.Time, id engine.PlayerID, reason string) {
 // below the minimum, and starts the game at once when the room is full (five
 // teams' worth of players).
 func (r *Room) syncCountdown(now time.Time) {
-	if r.phase != PhaseLobby {
+	if r.phase != PhaseLobby || r.paused {
 		return
 	}
 	if len(r.members) >= r.cfg.MaxPlayers {

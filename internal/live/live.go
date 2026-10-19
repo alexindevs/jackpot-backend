@@ -35,7 +35,15 @@ func Restore(ctx context.Context, db *store.Store, m *transport.Manager, w *stor
 		log.Error("a live game could not be read and was abandoned", "game", id, "err", reason)
 		_ = db.AbandonGame(ctx, id, now)
 	}
-	if len(live) == 0 {
+	lobbies, badLobbies, err := db.Lobbies(ctx)
+	if err != nil {
+		return err
+	}
+	for room, reason := range badLobbies {
+		log.Error("a saved lobby could not be read and was dropped", "room", room, "err", reason)
+		_ = db.DeleteLobby(ctx, room)
+	}
+	if len(live) == 0 && len(lobbies) == 0 {
 		return nil
 	}
 
@@ -47,11 +55,14 @@ func Restore(ctx context.Context, db *store.Store, m *transport.Manager, w *stor
 		}
 		items = append(items, transport.RestoreItem{GameID: g.GameID, Saved: room.Saved{
 			ID: g.Room, Creator: engine.PlayerID(g.Creator), Setup: g.Setup, Commands: g.Commands,
-			ChatSeq: g.ChatSeq, Chat: toRoomChat(g.Chat), Since: g.LastActive,
+			ChatSeq: g.ChatSeq, Chat: toRoomChat(g.Chat), TeamChat: toRoomTeamChat(g.TeamChat), Since: g.LastActive,
 		}})
 		for _, sp := range g.Setup.Specs {
 			ids = append(ids, string(sp.ID))
 		}
+	}
+	for _, l := range lobbies {
+		ids = append(ids, l.Members...)
 	}
 	profiles := map[engine.PlayerID]transport.Identity{}
 	known, err := db.Players(ctx, ids)
@@ -71,7 +82,40 @@ func Restore(ctx context.Context, db *store.Store, m *transport.Manager, w *stor
 		_ = db.AbandonGame(ctx, id, now)
 	}
 	log.Info("live games restored, paused until their players return", "restored", len(ok), "abandoned", len(failed))
+
+	// Lobbies come after games, so a lobby row left behind by a game that had
+	// already started is dropped instead of bringing the room back twice.
+	var saved []room.SavedLobby
+	for _, l := range lobbies {
+		sl := room.SavedLobby{ID: l.Room, Creator: engine.PlayerID(l.Creator), Since: l.UpdatedAt}
+		for _, id := range l.Members {
+			sl.Members = append(sl.Members, engine.PlayerID(id))
+		}
+		for _, p := range l.Pairs {
+			sl.Pairs = append(sl.Pairs, [2]engine.PlayerID{engine.PlayerID(p[0]), engine.PlayerID(p[1])})
+		}
+		for _, p := range l.Invites {
+			sl.Invites = append(sl.Invites, [2]engine.PlayerID{engine.PlayerID(p[0]), engine.PlayerID(p[1])})
+		}
+		saved = append(saved, sl)
+	}
+	okLobbies, failedLobbies := m.RestoreLobbies(saved, profiles)
+	for roomID, reason := range failedLobbies {
+		log.Info("a saved lobby was not restored", "room", roomID, "reason", reason)
+		_ = db.DeleteLobby(ctx, roomID)
+	}
+	if len(lobbies) > 0 {
+		log.Info("lobbies restored, paused until their members return", "restored", len(okLobbies), "dropped", len(failedLobbies))
+	}
 	return nil
+}
+
+func toRoomTeamChat(in []store.TeamChatLine) []room.TeamChatEntry {
+	out := make([]room.TeamChatEntry, 0, len(in))
+	for _, l := range in {
+		out = append(out, room.TeamChatEntry{Seq: l.Seq, Round: l.Round, Team: engine.TeamID(l.Team), From: engine.PlayerID(l.Player), Text: l.Text, At: l.At})
+	}
+	return out
 }
 
 func toRoomChat(in []store.ChatMessage) []room.ChatMessage {

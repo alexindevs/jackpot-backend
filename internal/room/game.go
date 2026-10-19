@@ -13,6 +13,7 @@ import (
 const (
 	maxChatRunes = 500
 	maxChatLog   = 100 // lines kept in memory for snapshots
+	maxTeamLog   = 200 // team chat lines kept per team
 )
 
 // startChat opens the private team chat before a round.
@@ -61,7 +62,7 @@ func (r *Room) checkAllReady(now time.Time) {
 	}
 }
 
-func (r *Room) teamChat(from engine.PlayerID, text string) error {
+func (r *Room) teamChat(now time.Time, from engine.PlayerID, text string) error {
 	if r.phase != PhaseChat {
 		return ErrWrongPhase
 	}
@@ -73,7 +74,14 @@ func (r *Room) teamChat(from engine.PlayerID, text string) error {
 	if n := utf8.RuneCountInString(text); n == 0 || n > maxChatRunes {
 		return ErrBadText
 	}
-	msg := TeamChatMessage{From: from, Text: text}
+	r.teamSeq++
+	msg := TeamChatMessage{ID: r.teamSeq, Round: r.game.Round() + 1, From: from, Text: text, At: now}
+	log := append(r.teamLog[m.team], msg)
+	if over := len(log) - maxTeamLog; over > 0 {
+		log = slices.Clone(log[over:])
+	}
+	r.teamLog[m.team] = log
+	r.record(TeamChatPosted{Room: r.id, At: now, Seq: msg.ID, Round: msg.Round, Team: m.team, Player: from, Text: text})
 	r.emit(from, msg)
 	r.emit(m.partner, msg)
 	return nil

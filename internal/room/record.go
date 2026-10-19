@@ -59,7 +59,35 @@ type ChatPosted struct {
 	Text   string
 }
 
-func (GameStarted) isRecord()    {}
+func (GameStarted) isRecord() {}
+
+// TeamChatPosted is a line of private team chat, kept for the same time as the
+// public chat so disputes can be settled. Seq is its number within the game.
+type TeamChatPosted struct {
+	Room   string
+	At     time.Time
+	Seq    int
+	Round  int
+	Team   engine.TeamID
+	Player engine.PlayerID
+	Text   string
+}
+
+// LobbyState is a lobby as it stands, to be kept so a restart doesn't lose it.
+// It is reported again whenever it changes. Gone means the room is no longer a
+// lobby (the game started, or the room closed) and the saved copy can go.
+type LobbyState struct {
+	Room    string
+	At      time.Time
+	Creator engine.PlayerID
+	Members []engine.PlayerID    // in the order they joined
+	Pairs   [][2]engine.PlayerID // partners who have teamed up
+	Invites [][2]engine.PlayerID // partner invitations still open, from then to
+	Gone    bool
+}
+
+func (LobbyState) isRecord()     {}
+func (TeamChatPosted) isRecord() {}
 func (ChatPosted) isRecord()     {}
 func (CommandApplied) isRecord() {}
 func (RoundWon) isRecord()       {}

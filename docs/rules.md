@@ -142,7 +142,9 @@ Anything not marked is Decided.
 - A paused game waits **24 hours** for its players (counted from when it was last active), then is **abandoned**. A player who leaves for good while it is paused drops their team, as usual.
 - The server itself pauses games; players cannot pause one on purpose. *(Assumed. Add a vote or a button if wanted.)*
 - Kept for **24 hours after a game ends**: the saved actions, the setup and the public chat, for settling disputes. The summary (who played, rounds, results) is kept **for good**, because leaderboards are built from it.
-- *(Not restored: lobbies (a restart closes them), spectators (they watch again), the private pre-round team chat, and signals already sent. Message numbers (`s`) start again from zero after a restart; see protocol.md.)*
+- **Lobbies are saved too.** A lobby that was open when the server restarted comes back with the same members, partners and open partner invitations, **paused**: its members find it in their paused list, and the countdown starts again (a full 2 minutes) once every member is back. While it is paused, nobody new can join and the creator can't skip the countdown, but members can still pair up. A restored lobby that nobody returns to is closed after **1 hour** (`LobbyPausedFor`). *(Assumed: shorter than a game's 24 hours, since a lobby nobody comes back to is just clutter.)* A lobby that empties out on a running server still closes after 1 minute, as before.
+- **Private team chat is saved**, line by line, and kept until 24 hours after the game ends like the public chat. A player coming back sees their own team's chat again (in the snapshot). Other teams and spectators never do.
+- *(Not restored: spectators (they watch again) and signals already sent. Message numbers (`s`) start again from zero after a restart; see protocol.md.)*
 
 ---
 

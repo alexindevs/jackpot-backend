@@ -67,14 +67,14 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
 - `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable}`.
 - `room_created`: `{room}`.
-- `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,pausedUntil?,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
+- `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,pausedUntil?,teamChat?,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.
 
 **Lobby**: `member_joined {player}`, `member_left {player,reason}`, `room_invite {from,room}`, `partner_invite {from,to,room}`, `partner_declined {by}`, `team_formed {a,b}`, `team_broken {a,b}`, `countdown_started {endsAt}`, `countdown_cancelled`, `game_starting {teams:[[a,b]],demoted:[],seats:[...],suspicionPoints,winsToFinish}`. A team's id is its index in `teams`. `seats` is the ring order, clockwise: the holder passes to the next entry, wrapping around. `suspicionPoints` (3) is what every player has at the start of every round, and `winsToFinish` (7) ends the game. Demoted players are now spectators. If the ring is reshuffled between rounds you get a `seats_reshuffled` game event with the new order.
 
 Invitations are only delivered to people who are connected at that moment. They are not queued.
 
-**Between rounds**: `chat_started {round,endsAt}`, `ready_changed {player,ready}`, `team_chat_message {from,text}` (the private team chat; only you and your partner get it).
+**Between rounds**: `chat_started {round,endsAt}`, `ready_changed {player,ready}`, `team_chat_message {id,round,from,text,at}` (the private team chat; only you and your partner get it; `id` counts up from 1 within the game). The snapshot's `teamChat` holds your team's lines so far, oldest first (the last 100), so after a reconnect or a restart you can show the whole code conversation again. It is replaced, not appended to, so de-duplicate by `id`.
 
 **Public chat**: `chat_message {id, from, text, at}`. Everyone in the room gets it: players, spectators and removed players. `id` counts up from 1 within the game, so a client can ask for "everything after the last one I saw". Only players still in the game may post (`chat`), from the moment the game starts until the room closes, including between rounds and after the game ends. Spectators and removed players can read but get `not_player` if they post, and there is no public chat in the lobby (`wrong_phase`). Text is trimmed and kept to one line (line breaks become spaces). Each player can post about once a second with a burst of 5; beyond that the server answers `slow_down` and drops the line. `snapshot.chat` carries the last 50 lines, oldest first, so a client that reconnects catches up without asking.
 
@@ -101,7 +101,9 @@ The messages are the originals, oldest first. Those with `s` at or below the sna
 
 A game that has started is saved. If the server restarts, or everyone is disconnected for a minute, the game is **paused**, not lost. After signing in you won't be put back in it. Ask for `my_games`:
 
-`{"t":"my_games","d":[{"room","round","until","players":[{id,name,style,team,here}]}]}`
+`{"t":"my_games","d":[{"kind","room","round","until","players":[{id,name,style,team,here}]}]}`
+
+`kind` is `game`, or `lobby` for a room that hadn't started yet (it comes back as a paused lobby: `round` is 0 and `team` is the pair number, or -1 for someone without a partner). Going back into a lobby works the same way. Once everyone is back it is an ordinary lobby again, with a fresh 2 minute countdown if there are enough people. While it is paused, `join` and `start_now` answer `paused`.
 
 `here` is whether that player is back. Show the list, and `resume_game {room}` for the one the player picks; you then get a `snapshot` (with `pausedUntil` set) and are in the room. The game continues, with new timers, once **every** player still in it has resumed (everyone gets `resumed`). While paused, game actions answer `paused`. `resume_game` answers `no_such_game` if the game isn't yours, is over or was abandoned, and `already_in_room` if you have a current room. A paused game isn't your current room until you resume it, and it comes back to the list if you disconnect. Paused games don't appear in `list_rooms`.
 

@@ -71,7 +71,7 @@ func TestMigrateIsIdempotentAndSafeToRunTwiceAtOnce(t *testing.T) {
 		}
 	}
 	var n int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 3 {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 4 {
 		t.Errorf("migrations recorded: %d, %v", n, err)
 	}
 }

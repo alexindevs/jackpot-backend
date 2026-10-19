@@ -8,12 +8,15 @@ import (
 )
 
 // recorded collects the records worth a summary: the game starting, rounds
-// won, the game ending. The per-command log is left out; see recordedAll.
+// won, the game ending. Saved-state records (commands, lobby changes, team
+// chat) are left out; see recordedAll.
 func recorded(t *testing.T, cfg Config) (*harness, *[]Record) {
 	t.Helper()
 	var recs []Record
 	cfg.OnRecord = func(r Record) {
-		if _, ok := r.(CommandApplied); !ok {
+		switch r.(type) {
+		case CommandApplied, LobbyState, TeamChatPosted:
+		default:
 			recs = append(recs, r)
 		}
 	}

@@ -67,6 +67,39 @@ func (m *Manager) Restore(items []RestoreItem, profiles map[engine.PlayerID]Iden
 	return ok, failed
 }
 
+// RestoreLobbies brings saved lobbies back as paused rooms. Each is returned
+// by room id when it can't be rebuilt, with the reason.
+func (m *Manager) RestoreLobbies(items []room.SavedLobby, profiles map[engine.PlayerID]Identity) (ok []string, failed map[string]error) {
+	failed = map[string]error{}
+	m.mu.Lock()
+	for id, p := range profiles {
+		m.known[id] = p
+	}
+	m.mu.Unlock()
+	for _, sl := range items {
+		r, err := room.RestoreLobby(m.cfg.Room, sl, m.cfg.Now())
+		if err != nil {
+			failed[sl.ID] = err
+			continue
+		}
+		m.mu.Lock()
+		taken := m.rooms[sl.ID] != nil
+		m.mu.Unlock()
+		if taken {
+			failed[sl.ID] = fmt.Errorf("room %s already exists", sl.ID)
+			continue
+		}
+		m.launch(sl.ID, r, nil)
+		m.mu.Lock()
+		for _, id := range r.Players() {
+			m.addPausedLocked(id, sl.ID)
+		}
+		m.mu.Unlock()
+		ok = append(ok, sl.ID)
+	}
+	return ok, failed
+}
+
 func (m *Manager) addPausedLocked(user engine.PlayerID, roomID string) {
 	if m.pausedBy[user] == nil {
 		m.pausedBy[user] = map[string]bool{}
@@ -76,6 +109,7 @@ func (m *Manager) addPausedLocked(user engine.PlayerID, roomID string) {
 
 // MyGame is one of a player's paused games.
 type MyGame struct {
+	Kind    string         `json:"kind"` // "game", or "lobby" for a room that had not started yet
 	Room    string         `json:"room"`
 	Round   int            `json:"round"`
 	Until   time.Time      `json:"until"` // the game is given up at this time
@@ -116,6 +150,10 @@ func (m *Manager) MyGames(user engine.PlayerID) []MyGame {
 		err := mr.runner.Inspect(func(r *room.Room) {
 			g.Until, paused = r.Paused()
 			g.Round = r.Round()
+			g.Kind = "game"
+			if r.Phase() == room.PhaseLobby {
+				g.Kind = "lobby"
+			}
 			roster = r.Roster()
 		})
 		inGame := slices.ContainsFunc(roster, func(e room.RosterEntry) bool { return e.ID == user })

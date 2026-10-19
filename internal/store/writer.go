@@ -133,6 +133,33 @@ func (w *Writer) handle(item any) {
 			return w.s.AddEvent(ctx, id, v.Seq, v.At, v.Command)
 		})
 
+	case room.TeamChatPosted:
+		id, ok := w.GameID(v.Room)
+		if !ok {
+			w.log.Error("team chat for a game that was never saved", "room", v.Room, "seq", v.Seq)
+			return
+		}
+		w.try("save team chat", func(ctx context.Context) error {
+			return w.s.AddTeamChat(ctx, id, TeamChatLine{Seq: v.Seq, Team: int(v.Team), Round: v.Round, Player: string(v.Player), Text: v.Text, At: v.At})
+		})
+
+	case room.LobbyState:
+		if v.Gone {
+			w.try("forget lobby", func(ctx context.Context) error { return w.s.DeleteLobby(ctx, v.Room) })
+			return
+		}
+		row := LobbyRow{Room: v.Room, Creator: string(v.Creator), UpdatedAt: v.At}
+		for _, m := range v.Members {
+			row.Members = append(row.Members, string(m))
+		}
+		for _, p := range v.Pairs {
+			row.Pairs = append(row.Pairs, [2]string{string(p[0]), string(p[1])})
+		}
+		for _, p := range v.Invites {
+			row.Invites = append(row.Invites, [2]string{string(p[0]), string(p[1])})
+		}
+		w.try("save lobby", func(ctx context.Context) error { return w.s.SaveLobby(ctx, row) })
+
 	case room.RoundWon:
 		id, ok := w.GameID(v.Room)
 		if !ok {

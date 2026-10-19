@@ -171,3 +171,93 @@ func TestExpiryClearsDisputeDataButKeepsTheSummary(t *testing.T) {
 		t.Error("leaderboards are built from the summaries, which stay")
 	}
 }
+
+func TestLobbiesAreSavedReplacedAndForgotten(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	l := LobbyRow{Room: "abc", Creator: "a", Members: []string{"a", "b", "c"}, Pairs: [][2]string{{"a", "b"}}, Invites: [][2]string{{"c", "a"}}, UpdatedAt: t0}
+	if err := s.SaveLobby(ctx, l); err != nil {
+		t.Fatal(err)
+	}
+	// A later state replaces it; an older one arriving late does not.
+	l2 := l
+	l2.Members, l2.Pairs, l2.Invites, l2.UpdatedAt = []string{"a", "b", "c", "d"}, [][2]string{{"a", "b"}, {"c", "d"}}, nil, t0.Add(time.Minute)
+	_ = s.SaveLobby(ctx, l2)
+	_ = s.SaveLobby(ctx, l)
+	got, bad, err := s.Lobbies(ctx)
+	if err != nil || len(bad) != 0 || len(got) != 1 {
+		t.Fatalf("lobbies = %+v, bad %v, err %v", got, bad, err)
+	}
+	if !reflect.DeepEqual(got[0].Members, l2.Members) || !reflect.DeepEqual(got[0].Pairs, l2.Pairs) || !got[0].UpdatedAt.Equal(l2.UpdatedAt) || got[0].Creator != "a" {
+		t.Errorf("lobby = %+v", got[0])
+	}
+	_ = s.SaveLobby(ctx, LobbyRow{Room: "xyz", Creator: "z", Members: []string{"z"}, UpdatedAt: t0})
+	if err := s.DeleteLobby(ctx, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	got, _, _ = s.Lobbies(ctx)
+	if len(got) != 1 || got[0].Room != "xyz" {
+		t.Errorf("after deleting: %+v", got)
+	}
+	if err := s.DeleteLobby(ctx, "never-existed"); err != nil {
+		t.Errorf("deleting nothing is fine: %v", err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE lobbies SET state = '"nonsense"' WHERE room = 'xyz'`); err != nil {
+		t.Fatal(err)
+	}
+	got, bad, _ = s.Lobbies(ctx)
+	if len(got) != 0 || bad["xyz"] == nil {
+		t.Errorf("an unreadable lobby is reported: %+v %v", got, bad)
+	}
+}
+
+func TestTeamChatIsSavedInOrderAndComesBackWithALiveGame(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id, _ := s.StartGame(ctx, "r", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	_ = s.SaveSetup(ctx, id, "a", liveSetup())
+	lines := []TeamChatLine{
+		{Seq: 1, Team: 0, Round: 1, Player: "a", Text: "sneeze means circles", At: t0},
+		{Seq: 2, Team: 1, Round: 1, Player: "c", Text: "we have our own", At: t0.Add(time.Second)},
+	}
+	for _, l := range lines {
+		if err := s.AddTeamChat(ctx, id, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.AddTeamChat(ctx, id, lines[0]); err != nil {
+		t.Fatal(err) // a retry is harmless
+	}
+	same := func(a, b []TeamChatLine) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for i := range a {
+			if !a[i].At.Equal(b[i].At) {
+				return false
+			}
+			a[i].At, b[i].At = time.Time{}, time.Time{}
+			if a[i] != b[i] {
+				return false
+			}
+		}
+		return true
+	}
+	got, err := s.GameTeamChat(ctx, id)
+	if err != nil || !same(got, append([]TeamChatLine(nil), lines...)) {
+		t.Fatalf("team chat = %+v, %v", got, err)
+	}
+	live, _, _ := s.LiveGames(ctx, 50)
+	if len(live) != 1 || !same(live[0].TeamChat, append([]TeamChatLine(nil), lines...)) {
+		t.Errorf("live game team chat = %+v", live)
+	}
+
+	// It expires with the rest of the game's dispute data, not before.
+	_ = s.FinishGame(ctx, id, t0.Add(-25*time.Hour), Outcome{Reason: "wins", CountsForStats: true})
+	if _, err := s.SweepExpired(ctx, t0.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GameTeamChat(ctx, id); len(got) != 0 {
+		t.Errorf("team chat of an expired game should be gone: %+v", got)
+	}
+}
