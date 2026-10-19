@@ -205,7 +205,7 @@ func (m *Manager) handle(c *conn, in inbound) {
 		c.enqueue(encodeReply(in.ID, errReply(errBadMessage)))
 		return
 	}
-	if in.Key == "" || in.Type == "ping" || in.Type == "list_rooms" {
+	if in.Key == "" || in.Type == "ping" || in.Type == "list_rooms" || in.Type == "my_games" {
 		c.enqueue(encodeReply(in.ID, m.process(c, in)))
 		return
 	}
@@ -257,6 +257,10 @@ func (m *Manager) process(c *conn, in inbound) reply {
 		return okOrError(m.Spectate(user, in.Room))
 	case "leave":
 		return okOrError(m.Leave(user))
+	case "my_games":
+		return reply{t: "my_games", d: m.MyGames(user)}
+	case "resume_game":
+		return okOrError(m.ResumeGame(user, in.Room))
 	}
 	input, err := toInput(in)
 	if err != nil {

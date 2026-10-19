@@ -45,20 +45,25 @@ type GameInfo struct {
 // Snapshot is a whole-room state for one viewer. It is sent on join and on
 // reconnect, so a client never has to replay history.
 type Snapshot struct {
-	Room       string
-	Creator    engine.PlayerID // the only one who can skip the lobby countdown
-	Phase      Phase
-	Players    []PlayerInfo
-	Spectators int
-	Timers     []TimerInfo
-	Game       *GameInfo
-	Chat       []ChatMessage // the most recent public chat, oldest first
-	Seq        int64         // the recipient's sequence number as of this snapshot
-	Gestures   []Gesture     // the signal vocabulary
+	Room        string
+	Creator     engine.PlayerID // the only one who can skip the lobby countdown
+	Phase       Phase
+	Players     []PlayerInfo
+	Spectators  int
+	Timers      []TimerInfo
+	Game        *GameInfo
+	Chat        []ChatMessage // the most recent public chat, oldest first
+	Seq         int64         // the recipient's sequence number as of this snapshot
+	Gestures    []Gesture     // the signal vocabulary
+	PausedUntil *time.Time    // set while the game is paused, waiting for its players
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer], Gestures: slices.Clone(r.cfg.Gestures)}
+	if r.paused {
+		until := r.pausedUntil
+		s.PausedUntil = &until
+	}
 	for _, id := range r.order {
 		m := r.members[id]
 		s.Players = append(s.Players, PlayerInfo{

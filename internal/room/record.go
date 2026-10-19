@@ -14,9 +14,20 @@ type Record interface{ isRecord() }
 
 // GameStarted says who is playing. Teams[i] is team i.
 type GameStarted struct {
-	Room  string
-	At    time.Time
-	Teams [][2]engine.PlayerID
+	Room    string
+	At      time.Time
+	Teams   [][2]engine.PlayerID
+	Creator engine.PlayerID
+	Setup   engine.Setup // enough to build the game again
+}
+
+// CommandApplied is one engine command that changed the game, numbered from 1
+// within the game. Replaying them on the game's Setup rebuilds it exactly.
+type CommandApplied struct {
+	Room    string
+	At      time.Time
+	Seq     int
+	Command engine.Command
 }
 
 // RoundWon is one finished round.
@@ -48,10 +59,11 @@ type ChatPosted struct {
 	Text   string
 }
 
-func (GameStarted) isRecord()  {}
-func (ChatPosted) isRecord()   {}
-func (RoundWon) isRecord()     {}
-func (GameFinished) isRecord() {}
+func (GameStarted) isRecord()    {}
+func (ChatPosted) isRecord()     {}
+func (CommandApplied) isRecord() {}
+func (RoundWon) isRecord()       {}
+func (GameFinished) isRecord()   {}
 
 func (r *Room) record(rec Record) {
 	if r.cfg.OnRecord != nil {

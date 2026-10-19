@@ -186,7 +186,7 @@ var errCodes = []struct {
 	{engine.ErrWrongPhase, "wrong_phase"}, {engine.ErrUnknownPlayer, "unknown_player"},
 	{engine.ErrGameOver, "game_over"}, {errBadMessage, "bad_message"},
 	{room.ErrNotMember, "not_in_room"}, {errNotInRoom, "not_in_room"}, {errAlreadyInRoom, "already_in_room"},
-	{errNoSuchRoom, "no_such_room"}, {errRateLimited, "rate_limited"},
+	{errNoSuchRoom, "no_such_room"}, {errNoSuchGame, "no_such_game"}, {room.ErrPaused, "paused"}, {errRateLimited, "rate_limited"},
 }
 
 func errCode(err error) string {

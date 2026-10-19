@@ -179,6 +179,8 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 	if err != nil {
 		return err
 	}
+	r.cmdSeq++
+	r.record(CommandApplied{Room: r.id, At: now, Seq: r.cmdSeq, Command: cmd})
 	for _, ev := range evs {
 		r.deliver(ev)
 		switch e := ev.(type) {
@@ -200,9 +202,13 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 	}
 	r.sendHandUpdates(before)
 
+	if r.paused && r.game.Phase() != engine.PhaseOver {
+		return nil // a paused game starts its timers again when it resumes
+	}
 	switch r.game.Phase() {
 	case engine.PhaseOver:
 		r.phase = PhaseOver
+		r.paused = false
 		r.dl = newDeadlines()
 		r.holdFor = ""
 	case engine.PhaseWaiting:

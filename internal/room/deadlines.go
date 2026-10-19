@@ -17,6 +17,7 @@ const (
 	dkForced                     // a caught holder must choose a card to pass
 	dkReconnect                  // a disconnected player's window
 	dkEmpty                      // nobody is connected
+	dkPause                      // a paused game's time is up
 )
 
 func (k dkind) label() string {
@@ -33,6 +34,8 @@ func (k dkind) label() string {
 		return "countdown"
 	case dkChat:
 		return "chat"
+	case dkPause:
+		return "pause"
 	}
 	return "empty"
 }

@@ -185,7 +185,7 @@ func (c *client) request(v msg) msg {
 	v["id"] = id
 	c.send(v)
 	return c.wait("a reply to "+v["type"].(string), func(m msg) bool {
-		return m["id"] == id && (m["t"] == "ok" || m["t"] == "error" || m["t"] == "room_created" || m["t"] == "rooms")
+		return m["id"] == id && (m["t"] == "ok" || m["t"] == "error" || m["t"] == "room_created" || m["t"] == "rooms" || m["t"] == "my_games")
 	})
 }
 

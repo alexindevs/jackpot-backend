@@ -53,7 +53,7 @@ A game's summary: who played, on which team, how it ended, and each round's winn
 
 ## `GET /api/games/{id}/chat` and `GET /api/rooms/{room}/chat`
 
-A game's public chat from the last 24 hours, oldest first. Two addresses for the same thing: by game id (for settling disputes later), or by **room id** (which is what a client in a room knows; it answers for that room's most recent game). Needs `Authorization: Bearer <start.ng game session>`, and only the players of that game may read it (`403 not_a_player` otherwise). Without a session you get `401` whether or not the room exists. Never cached.
+A game's public chat, oldest first, kept until 24 hours after the game ends. Two addresses for the same thing: by game id (for settling disputes later), or by **room id** (which is what a client in a room knows; it answers for that room's most recent game). Needs `Authorization: Bearer <start.ng game session>`, and only the players of that game may read it (`403 not_a_player` otherwise). Without a session you get `401` whether or not the room exists. Never cached.
 
 Query parameters: `after` (a message number, default 0) returns only lines numbered above it, and `limit` (1 to 200, default 100) caps how many come back. A client polls with `after` set to the last line it has, about once a minute, while its WebSocket is down.
 
@@ -61,4 +61,4 @@ Query parameters: `after` (a message number, default 0) returns only lines numbe
 [{ "id": 1, "text": "I said it first", "at": "...", "player": { "id": "7", "name": "Trini" } }]
 ```
 
-`id` is the line's number within the game, the same number it had when it was sent live over the WebSocket. Chat is stored for 24 hours and then deleted.
+`id` is the line's number within the game, the same number it had when it was sent live over the WebSocket. Chat is deleted 24 hours after its game ends.

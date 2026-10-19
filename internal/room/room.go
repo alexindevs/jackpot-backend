@@ -36,6 +36,7 @@ var (
 	ErrNotJoinable     = errors.New("the game has already started")
 	ErrRoomFull        = errors.New("room is full")
 	ErrAlreadyMember   = errors.New("already in this room")
+	ErrPaused          = errors.New("the game is paused until everyone is back")
 	ErrBadGesture      = errors.New("not a known gesture")
 	ErrNotMember       = errors.New("not in this room")
 	ErrNotPlayer       = errors.New("not a player in this game")
@@ -61,7 +62,8 @@ type Config struct {
 	HoldTimer       time.Duration // the holder must pass within this
 	PromptTimeout   time.Duration // reveal and forced-pass prompts
 	ReconnectWindow time.Duration // a disconnected player's time to come back
-	EmptyRoomGrace  time.Duration // nobody connected for this long closes the room
+	EmptyRoomGrace  time.Duration // nobody connected for this long closes a lobby, or pauses a game
+	PausedFor       time.Duration // a paused game waits this long for its players before it is abandoned
 
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
 	SpectatorsSeeCards bool
@@ -96,6 +98,7 @@ func DefaultConfig() Config {
 		PromptTimeout:      30 * time.Second,
 		ReconnectWindow:    90 * time.Second,
 		EmptyRoomGrace:     time.Minute,
+		PausedFor:          24 * time.Hour,
 		SpectatorsSeeCards: true,
 		ChatRatePerSec:     1,
 		ChatBurst:          5,
@@ -141,6 +144,10 @@ type Room struct {
 
 	out []Out
 
+	paused      bool      // a game waiting for its players to come back
+	pausedUntil time.Time // when a paused game is abandoned
+	cmdSeq      int       // engine commands applied so far, for the saved log
+
 	seqs map[engine.PlayerID]int64 // last sequence number given to each recipient
 	logs map[engine.PlayerID][]Out // what each recipient was last sent, for replay
 }
@@ -180,6 +187,7 @@ type Info struct {
 	Spectators int
 	MaxPlayers int
 	Joinable   bool
+	Paused     bool
 }
 
 func (r *Room) Info() Info {
@@ -194,6 +202,7 @@ func (r *Room) Info() Info {
 		Players: len(r.members), Teams: pairs / 2, Spectators: len(r.spectators),
 		MaxPlayers: r.cfg.MaxPlayers,
 		Joinable:   r.phase == PhaseLobby && len(r.members) < r.cfg.MaxPlayers,
+		Paused:     r.paused,
 	}
 }
 
@@ -268,6 +277,7 @@ func (r *Room) Handle(now time.Time, from engine.PlayerID, in Input) ([]Out, err
 		return nil, err
 	}
 	r.syncCountdown(now)
+	r.maybeResume(now)
 	r.updateEmpty(now)
 	return r.take(), nil
 }
@@ -291,6 +301,13 @@ func (r *Room) Tick(now time.Time) []Out {
 func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 	if r.phase == PhaseClosed {
 		return ErrClosed
+	}
+	if r.paused {
+		switch in.(type) {
+		case Connect, Disconnect, Leave, Spectate, Chat, Resume:
+		default:
+			return ErrPaused
+		}
 	}
 	switch v := in.(type) {
 	case Join:
@@ -625,13 +642,14 @@ func (r *Room) startGame(now time.Time) {
 			specs = append(specs, engine.PlayerSpec{ID: id, Team: engine.TeamID(t)})
 		}
 	}
-	g, err := engine.New(r.cfg.Engine, specs, rand.New(rand.NewPCG(r.rng.Uint64(), r.rng.Uint64())))
+	setup := engine.Setup{Config: r.cfg.Engine, Specs: specs, SeedA: r.rng.Uint64(), SeedB: r.rng.Uint64()}
+	g, err := engine.NewFromSetup(setup)
 	if err != nil {
 		r.close(now, "could not start the game")
 		return
 	}
 	r.game = g
-	r.record(GameStarted{Room: r.id, At: now, Teams: slices.Clone(pairs)})
+	r.record(GameStarted{Room: r.id, At: now, Teams: slices.Clone(pairs), Creator: r.creator, Setup: setup})
 	r.broadcast(GameStarting{
 		Teams:           pairs,
 		Demoted:         demoted,
@@ -656,7 +674,7 @@ func (r *Room) close(at time.Time, reason string) {
 // period.
 func (r *Room) updateEmpty(now time.Time) {
 	k := dkey{kind: dkEmpty}
-	if r.phase == PhaseClosed {
+	if r.phase == PhaseClosed || r.paused {
 		return
 	}
 	connected := 0
@@ -688,6 +706,12 @@ func (r *Room) fire(k dkey, at time.Time) {
 	case dkReconnect:
 		r.reconnectExpired(at, k.player)
 	case dkEmpty:
+		if r.game != nil && (r.phase == PhaseChat || r.phase == PhasePlaying) {
+			r.pause(at, at.Add(r.cfg.PausedFor))
+			return
+		}
 		r.close(at, "empty")
+	case dkPause:
+		r.close(at, "nobody came back to the paused game")
 	}
 }

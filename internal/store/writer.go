@@ -61,6 +61,14 @@ func (w *Writer) Seen(p Player) { w.enqueue(p) }
 // Dropped is how many records were thrown away because the queue was full.
 func (w *Writer) Dropped() int64 { return w.dropped.Load() }
 
+// Adopt tells the writer that a room is playing a game that is already saved,
+// as after a restart, so what the room reports goes to the right game.
+func (w *Writer) Adopt(roomID string, gameID int64) {
+	w.mu.Lock()
+	w.games[roomID] = gameID
+	w.mu.Unlock()
+}
+
 // GameID is the database id of the game a room is playing, once it is saved.
 func (w *Writer) GameID(roomID string) (int64, bool) {
 	w.mu.Lock()
@@ -110,7 +118,20 @@ func (w *Writer) handle(item any) {
 			w.mu.Lock()
 			w.games[v.Room] = id
 			w.mu.Unlock()
+			w.try("save setup", func(ctx context.Context) error {
+				return w.s.SaveSetup(ctx, id, string(v.Creator), v.Setup)
+			})
 		}
+
+	case room.CommandApplied:
+		id, ok := w.GameID(v.Room)
+		if !ok {
+			w.log.Error("command for a game that was never saved", "room", v.Room, "seq", v.Seq)
+			return
+		}
+		w.try("save command", func(ctx context.Context) error {
+			return w.s.AddEvent(ctx, id, v.Seq, v.At, v.Command)
+		})
 
 	case room.RoundWon:
 		id, ok := w.GameID(v.Room)

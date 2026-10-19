@@ -164,6 +164,15 @@ func (r *Room) checkInvariants() error {
 	if len(r.members) > r.cfg.MaxPlayers {
 		return fmt.Errorf("%d members, max %d", len(r.members), r.cfg.MaxPlayers)
 	}
+	if r.paused {
+		if len(r.dl.m) != 1 || !r.dl.has(dkey{kind: dkPause}) {
+			return fmt.Errorf("a paused game should have only its pause deadline, has %v", r.dl.m)
+		}
+		if r.phase != PhaseChat && r.phase != PhasePlaying {
+			return fmt.Errorf("paused in phase %v", r.phase)
+		}
+		return nil
+	}
 	has := func(kind dkind) int { return len(r.dl.players(kind)) }
 	switch r.phase {
 	case PhaseLobby:

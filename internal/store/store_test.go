@@ -71,7 +71,7 @@ func TestMigrateIsIdempotentAndSafeToRunTwiceAtOnce(t *testing.T) {
 		}
 	}
 	var n int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 2 {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 3 {
 		t.Errorf("migrations recorded: %d, %v", n, err)
 	}
 }
@@ -260,15 +260,14 @@ func TestDrawsAreStoredWithoutAWinner(t *testing.T) {
 	}
 }
 
-func TestRestartAbandonsGamesLeftOpen(t *testing.T) {
+func TestAbandoningAFinishedGameChangesNothing(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	open := play(t, s, [][2]string{{"a", "b"}, {"c", "d"}}, nil, nil)
 	done := play(t, s, [][2]string{{"a", "b"}, {"c", "d"}}, nil, &Outcome{Reason: "wins", CountsForStats: true})
 
-	n, err := s.AbandonUnfinished(ctx, t0.Add(time.Minute))
-	if err != nil || n != 1 {
-		t.Fatalf("abandoned %d, %v", n, err)
+	if err := s.AbandonGame(ctx, open, t0.Add(time.Minute)); err != nil {
+		t.Fatal(err)
 	}
 	if g, _ := s.Game(ctx, open); g.Status != "abandoned" || g.EndedAt == nil {
 		t.Errorf("open game = %+v", g)
@@ -285,33 +284,49 @@ func TestRestartAbandonsGamesLeftOpen(t *testing.T) {
 	}
 }
 
-func TestChatIsKeptForADayAndThenSwept(t *testing.T) {
+func TestChatIsKeptUntilADayAfterTheGameEnds(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	_ = s.UpsertPlayer(ctx, Player{ID: "a", Name: "Ada"})
-	id, _ := s.StartGame(ctx, "r", t0, [][2]string{{"a", "b"}, {"c", "d"}})
-	for i, age := range []time.Duration{30 * time.Hour, 25 * time.Hour, 23 * time.Hour, time.Hour} {
-		if err := s.AddChat(ctx, id, i+1, "a", fmt.Sprintf("msg %d", i), t0.Add(-age)); err != nil {
+	live, _ := s.StartGame(ctx, "live", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	recent, _ := s.StartGame(ctx, "recent", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	old, _ := s.StartGame(ctx, "old", t0, [][2]string{{"a", "b"}, {"c", "d"}})
+	for _, id := range []int64{live, recent, old} {
+		// Even old messages stay while the game is live or recently over.
+		if err := s.AddChat(ctx, id, 1, "a", "first", t0.Add(-48*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AddChat(ctx, id, 2, "a", "second", t0); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.GameChat(ctx, id, t0.Add(-24*time.Hour), 0, 100)
-	if err != nil || len(got) != 2 || got[0].Text != "msg 2" || got[0].ID != 3 || got[1].Text != "msg 3" || got[0].Player.Name != "Ada" {
-		t.Fatalf("chat = %+v, %v", got, err)
+	end := Outcome{Reason: "wins", CountsForStats: true}
+	_ = s.FinishGame(ctx, recent, t0.Add(-23*time.Hour), end)
+	_ = s.AbandonGame(ctx, old, t0.Add(-25*time.Hour))
+
+	n, err := s.SweepExpired(ctx, t0.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
 	}
-	n, err := s.SweepChat(ctx, t0.Add(-24*time.Hour))
-	if err != nil || n != 2 {
-		t.Errorf("swept %d, %v", n, err)
+	_ = n
+	count := func(id int64) int {
+		got, err := s.GameChat(ctx, id, time.Time{}, 0, 100)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(got)
 	}
-	all, _ := s.GameChat(ctx, id, t0.Add(-100*time.Hour), 0, 100)
-	if len(all) != 2 {
-		t.Errorf("after sweeping: %d messages", len(all))
+	if count(live) != 2 || count(recent) != 2 {
+		t.Errorf("chat of a live or recently finished game was swept: live %d, recent %d", count(live), count(recent))
 	}
-	if ok, _ := s.WasPlayer(ctx, id, "a"); !ok {
-		t.Error("a played")
+	if count(old) != 0 {
+		t.Errorf("chat of a game over for more than a day should be gone: %d", count(old))
 	}
-	if ok, _ := s.WasPlayer(ctx, id, "z"); ok {
-		t.Error("z did not play")
+	if g, _ := s.Game(ctx, old); g == nil || g.Status != "abandoned" {
+		t.Errorf("the game itself must stay: %+v", g)
+	}
+	if ok, _ := s.WasPlayer(ctx, old, "a"); !ok {
+		t.Error("who played must stay too")
 	}
 }
 

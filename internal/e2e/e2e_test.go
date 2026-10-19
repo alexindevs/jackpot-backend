@@ -173,13 +173,20 @@ func getJSON(t *testing.T, base, path string, headers ...string) (int, any) {
 type stack struct {
 	db     *store.Store
 	writer *store.Writer
+	m      *transport.Manager
 	srv    *httptest.Server
 	wsURL  string
+	stop   func()
 }
 
 func newStack(t *testing.T, mod func(*room.Config)) *stack {
 	t.Helper()
-	db := newDB(t)
+	return newStackOn(t, newDB(t), mod)
+}
+
+// newStackOn starts a server on an existing database, as after a restart.
+func newStackOn(t *testing.T, db *store.Store, mod func(*room.Config)) *stack {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	writer := store.NewWriter(db, log, 64)
 
@@ -200,8 +207,20 @@ func newStack(t *testing.T, mod func(*room.Config)) *stack {
 	mux.Handle("/api/", api.Handler(api.Config{Store: db, Rooms: m, Auth: auth, Origins: []string{"jackpot.start.ng"}}))
 	mux.Handle("/", m.Handler())
 	srv := httptest.NewServer(mux)
-	t.Cleanup(func() { m.CloseAll(); cancel(); srv.Close(); m.Wait() })
-	return &stack{db: db, writer: writer, srv: srv, wsURL: "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"}
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			m.CloseAll()
+			cancel()
+			srv.Close()
+			m.Wait()
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = writer.Close(ctx)
+		})
+	}
+	t.Cleanup(stop)
+	return &stack{db: db, writer: writer, m: m, srv: srv, wsURL: "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws", stop: stop}
 }
 
 func (st *stack) drain(t *testing.T) {

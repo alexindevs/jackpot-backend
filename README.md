@@ -86,7 +86,7 @@ Do not set `JACKPOT_DEV`. The socket URL is then `wss://<your-service>.onrender.
 These points about Render come from memory and weren't checked against its current docs, so check them before relying on them:
 
 - Web services get an `onrender.com` address with TLS, and WebSockets work on them.
-- **Free instances spin down after a period without traffic and take a while to wake up.** Games live in memory, so a spin-down ends every game and lobby. Use an always-on paid instance for real play.
+- **Free instances spin down after a period without traffic and take a while to wake up.** A spin-down stops the server, so lobbies are lost; a game that had started is saved and comes back paused when the server wakes (its players find it under `my_games`). Use an always-on paid instance for real play.
 - Free Postgres databases may expire after a limited time.
 
-Run **one** server instance. Rooms live in memory, and on start the server marks any game still open in the database as abandoned, which assumes nothing else is running games.
+Run **one** server instance. Rooms live in memory. On start, the server restores any unfinished game from the database as a paused room, which assumes nothing else is running games.

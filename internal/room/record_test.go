@@ -7,7 +7,20 @@ import (
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 )
 
+// recorded collects the records worth a summary: the game starting, rounds
+// won, the game ending. The per-command log is left out; see recordedAll.
 func recorded(t *testing.T, cfg Config) (*harness, *[]Record) {
+	t.Helper()
+	var recs []Record
+	cfg.OnRecord = func(r Record) {
+		if _, ok := r.(CommandApplied); !ok {
+			recs = append(recs, r)
+		}
+	}
+	return newHarnessCfg(t, 60, cfg), &recs
+}
+
+func recordedAll(t *testing.T, cfg Config) (*harness, *[]Record) {
 	t.Helper()
 	var recs []Record
 	cfg.OnRecord = func(r Record) { recs = append(recs, r) }
@@ -24,7 +37,7 @@ func TestAGameIsRecordedFromStartToFinish(t *testing.T) {
 		t.Fatalf("after the start: %v", *recs)
 	}
 	gs, ok := (*recs)[0].(GameStarted)
-	if !ok || gs.Room != "room1" || len(gs.Teams) != 2 {
+	if !ok || gs.Room != "room1" || len(gs.Teams) != 2 || gs.Creator != pid(0) || len(gs.Setup.Specs) != 4 {
 		t.Fatalf("GameStarted = %+v", (*recs)[0])
 	}
 	// Team i in the record is team i in the engine.
@@ -94,6 +107,10 @@ func TestAGameThatEveryoneWalksAwayFromIsAbandoned(t *testing.T) {
 		h.must(pid(i), Disconnect{})
 	}
 	h.advance(time.Minute)
+	if _, paused := h.r.Paused(); !paused {
+		t.Fatal("everyone gone pauses the game; it is not abandoned yet")
+	}
+	h.advance(h.r.cfg.PausedFor)
 	if h.r.Phase() != PhaseClosed {
 		t.Fatalf("phase = %v", h.r.Phase())
 	}
@@ -126,5 +143,32 @@ func TestLobbiesAndFinishedGamesProduceNoAbandonedRecord(t *testing.T) {
 	h.advance(time.Minute)
 	if len(*recs) != n {
 		t.Errorf("closing a finished game recorded more: %v", (*recs)[n:])
+	}
+}
+
+func TestEveryAppliedCommandIsRecordedInOrder(t *testing.T) {
+	h, recs := recordedAll(t, DefaultConfig())
+	h.playing(4)
+	holder := h.hold()
+	h.must(holder, Pass{Card: engine.CardType(0)})
+	var cmds []CommandApplied
+	for _, r := range *recs {
+		if c, ok := r.(CommandApplied); ok {
+			cmds = append(cmds, c)
+		}
+	}
+	if len(cmds) < 2 {
+		t.Fatalf("commands recorded: %v", cmds)
+	}
+	for i, c := range cmds {
+		if c.Seq != i+1 {
+			t.Errorf("command %d has seq %d", i, c.Seq)
+		}
+	}
+	if _, ok := cmds[0].Command.(engine.StartRound); !ok {
+		t.Errorf("the first command is %T", cmds[0].Command)
+	}
+	if p, ok := cmds[1].Command.(engine.Pass); !ok || p.Player != holder {
+		t.Errorf("the second command is %#v", cmds[1].Command)
 	}
 }

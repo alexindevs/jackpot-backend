@@ -90,7 +90,7 @@ Anything not marked is Decided.
 - If only **one team is left, it wins by forfeit**. A game needs at least 2 teams.
 - A player who **disconnects** gets a **90 second reconnect window**. If they haven't reconnected by then, their team is removed as above.
 - A **deliberate** drop-out removes the team **immediately**.
-- If **nobody** is connected for **1 minute**, the room closes.
+- If **nobody** is connected for **1 minute**, a lobby closes. A game that has started is **paused** instead (section 13).
 - A forfeit win **does not count** toward leaderboard or duo stats.
 
 ## 9. Stats and leaderboards
@@ -106,7 +106,7 @@ Anything not marked is Decided.
 - Everyone in the game sees it. It is a normal part of play: distractions, bluffs, rules arguments and accusations all happen here.
 - Partners may use it for coded messages, knowing opponents can read it.
 - **Spectators and removed players can read it but can't post.**
-- Messages are **stored for 24 hours**, so disputed wins can be checked.
+- Messages are **stored until 24 hours after the game ends**, so disputed wins can be checked.
 - It's expected to get spammy. **Moderation is out of MVP scope** and planned soon after.
 - Delivered over the **WebSocket**, with a **polling fallback about once a minute** through the REST API for a client whose socket is down.
 - *(Assumed: it opens when the game starts, because chat is stored against a game, and stays open through the rounds and after the game ends, so a disputed win can be argued. There is no public chat in the lobby.)*
@@ -130,6 +130,19 @@ Anything not marked is Decided.
 - If one free player is left over without a partner, they become a spectator. If they don't want that, they should pick a partner in time.
 - *(Assumed: accepting a partner invite also joins you to the room. Leaving the lobby frees your partner. A lobby player who disconnects gets the same 90 second window, then is removed.)*
 - **Open:** how a player finds or is told about invitations when they aren't in the room; the list of running rooms and who may see it.
+
+---
+
+## 13. Pausing and resuming
+
+- A game that has started is never lost to a restart or a bad night of connections. It is **saved as it is played** (the setup and every action), and the server can rebuild it exactly.
+- A game is **paused** when the server restarts, or when nobody has been connected for 1 minute. While paused nothing moves: no timers run, nobody can pass, suspect, proclaim, vote, ready up or signal. Players can still sign in, chat publicly and read.
+- A player finds their paused games in a list (`my_games`) and goes back to one (`resume_game`). A paused game is **not** the player's current room, so they can use the app meanwhile.
+- When **every player still in the game** is back, it **resumes**. Timers start fresh: the holder gets a new 60 second hold timer, and between rounds the 2 minute team chat starts over.
+- A paused game waits **24 hours** for its players (counted from when it was last active), then is **abandoned**. A player who leaves for good while it is paused drops their team, as usual.
+- The server itself pauses games; players cannot pause one on purpose. *(Assumed. Add a vote or a button if wanted.)*
+- Kept for **24 hours after a game ends**: the saved actions, the setup and the public chat, for settling disputes. The summary (who played, rounds, results) is kept **for good**, because leaderboards are built from it.
+- *(Not restored: lobbies (a restart closes them), spectators (they watch again), the private pre-round team chat, and signals already sent. Message numbers (`s`) start again from zero after a restart; see protocol.md.)*
 
 ---
 

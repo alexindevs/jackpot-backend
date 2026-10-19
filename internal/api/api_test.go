@@ -262,8 +262,8 @@ func TestChatNeedsASessionAndAGameYouPlayedIn(t *testing.T) {
 	if len(msgs) != 1 || msgs[0].(map[string]any)["text"] != "I said it first" || msgs[0].(map[string]any)["id"] != float64(1) {
 		t.Errorf("messages = %v", body)
 	}
-	if want := now.Add(-24 * time.Hour); !f.gotSince.Equal(want) {
-		t.Errorf("history should go back 24h: since %v, want %v", f.gotSince, want)
+	if !f.gotSince.IsZero() {
+		t.Errorf("the API must not cut chat by age (the sweeper expires it a day after the game ends): since %v", f.gotSince)
 	}
 	if resp.Header.Get("Cache-Control") != "private, no-store" {
 		t.Errorf("chat must not be cached publicly: %q", resp.Header.Get("Cache-Control"))

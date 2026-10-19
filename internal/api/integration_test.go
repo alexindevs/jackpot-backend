@@ -75,7 +75,20 @@ func TestLeaderboardsEndToEndOnARealDatabase(t *testing.T) {
 	}
 	resp, body := get(t, srv, fmt.Sprintf("/api/games/%d/chat", id), "Authorization", "Bearer dev:alice")
 	msgs := body.([]any)
-	if resp.StatusCode != 200 || len(msgs) != 1 || msgs[0].(map[string]any)["text"] != "good game" {
-		t.Errorf("chat = %d %v (messages older than a day must not appear)", resp.StatusCode, body)
+	if resp.StatusCode != 200 || len(msgs) != 2 || msgs[0].(map[string]any)["text"] != "good game" {
+		t.Errorf("chat of a game that just ended stays readable: %d %v", resp.StatusCode, body)
+	}
+
+	// A day after the game, the dispute data goes; the game itself stays.
+	if _, err := s.SweepExpired(ctx, now.Add(48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	_, body = get(t, srv, fmt.Sprintf("/api/games/%d/chat", id), "Authorization", "Bearer dev:alice")
+	if msgs := body.([]any); len(msgs) != 0 {
+		t.Errorf("expired chat = %v", body)
+	}
+	_, body = get(t, srv, "/api/leaderboards/duos")
+	if len(body.([]any)) != 1 {
+		t.Errorf("leaderboards must survive expiry: %v", body)
 	}
 }

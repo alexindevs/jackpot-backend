@@ -126,6 +126,8 @@ type Manager struct {
 	conns    map[engine.PlayerID]*conn
 	idents   map[engine.PlayerID]Identity
 	idem     map[engine.PlayerID]*idemCache
+	pausedBy map[engine.PlayerID]map[string]bool // paused games each player can go back to
+	known    map[engine.PlayerID]Identity        // profiles of players in paused games, who may not be signed in
 
 	statsMu sync.Mutex
 	stats   map[string]int64 // disconnects by reason since the last summary
@@ -142,6 +144,8 @@ func NewManager(ctx context.Context, cfg Config) *Manager {
 		conns:    map[engine.PlayerID]*conn{},
 		idents:   map[engine.PlayerID]Identity{},
 		idem:     map[engine.PlayerID]*idemCache{},
+		pausedBy: map[engine.PlayerID]map[string]bool{},
+		known:    map[engine.PlayerID]Identity{},
 		stats:    map[string]int64{},
 	}
 	m.wg.Add(1)
@@ -290,6 +294,15 @@ func (m *Manager) Connected(user engine.PlayerID) {
 func (m *Manager) Disconnected(user engine.PlayerID) {
 	if mr, ok := m.roomOf(user); ok && mr != nil {
 		_ = mr.runner.Submit(user, room.Disconnect{})
+		if m.pausedNow(mr) {
+			// A paused game they had gone back to is theirs to find again.
+			m.mu.Lock()
+			if m.userRoom[user] == mr.id {
+				delete(m.userRoom, user)
+				m.addPausedLocked(user, mr.id)
+			}
+			m.mu.Unlock()
+		}
 	}
 }
 
@@ -318,22 +331,7 @@ func (m *Manager) CreateRoom(user engine.PlayerID) (string, error) {
 
 	a, b := cryptoSeed()
 	r, initial := room.New(m.cfg.Room, id, user, mrand.New(mrand.NewPCG(a, b)), m.cfg.Now())
-	ctx, cancel := context.WithCancel(m.ctx)
-	mr := &managed{id: id, cancel: cancel}
-	mr.runner = room.NewRunner(r, m.cfg.Now, func(outs []room.Out) { m.deliver(id, outs) })
-
-	m.mu.Lock()
-	m.rooms[id] = mr
-	m.mu.Unlock()
-	m.deliver(id, initial)
-
-	m.wg.Add(1)
-	go func() {
-		defer m.wg.Done()
-		mr.runner.Run(ctx)
-		cancel()
-		m.roomEnded(id)
-	}()
+	m.launch(id, r, initial)
 	return id, nil
 }
 
@@ -342,6 +340,12 @@ func (m *Manager) roomEnded(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.rooms, id)
+	for user, set := range m.pausedBy {
+		delete(set, id)
+		if len(set) == 0 {
+			delete(m.pausedBy, user)
+		}
+	}
 	for user, rid := range m.userRoom {
 		if rid == id {
 			delete(m.userRoom, user)
@@ -418,7 +422,7 @@ func (m *Manager) ListRooms() []room.Info {
 	var infos []room.Info
 	for _, mr := range rooms {
 		var info room.Info
-		if err := mr.runner.Inspect(func(r *room.Room) { info = r.Info() }); err == nil {
+		if err := mr.runner.Inspect(func(r *room.Room) { info = r.Info() }); err == nil && !info.Paused {
 			infos = append(infos, info)
 		}
 	}
@@ -451,6 +455,8 @@ func (m *Manager) deliver(roomID string, outs []room.Out) {
 			m.mu.Unlock()
 		case room.RoomClosed:
 			m.roomEnded(roomID)
+		case room.Paused:
+			m.onPaused(roomID, o.To, v.Players)
 		}
 
 		m.mu.Lock()
@@ -458,7 +464,7 @@ func (m *Manager) deliver(roomID string, outs []room.Out) {
 		var profiles []Identity
 		if c != nil {
 			for _, id := range profilesIn(o.Msg) {
-				if ident, ok := m.idents[id]; ok {
+				if ident, ok := m.identLocked(id); ok {
 					profiles = append(profiles, ident)
 				}
 			}

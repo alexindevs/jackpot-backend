@@ -35,12 +35,11 @@ type Rooms interface{ ListRooms() []room.Info }
 
 // Config configures the API.
 type Config struct {
-	Store         Store // nil when no database is configured: those endpoints answer 503
-	Rooms         Rooms
-	Auth          transport.Authenticator
-	Origins       []string      // hosts allowed to call the API from a browser, e.g. "jackpot.start.ng"
-	ChatRetention time.Duration // how far back chat history goes (default 24h)
-	Now           func() time.Time
+	Store   Store // nil when no database is configured: those endpoints answer 503
+	Rooms   Rooms
+	Auth    transport.Authenticator
+	Origins []string // hosts allowed to call the API from a browser, e.g. "jackpot.start.ng"
+	Now     func() time.Time
 }
 
 const (
@@ -55,9 +54,6 @@ type handler struct{ cfg Config }
 
 // Handler returns the API, to be mounted at /api/.
 func Handler(cfg Config) http.Handler {
-	if cfg.ChatRetention == 0 {
-		cfg.ChatRetention = 24 * time.Hour
-	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -302,7 +298,7 @@ func (h *handler) writeChat(w http.ResponseWriter, r *http.Request, gameID int64
 		writeError(w, http.StatusForbidden, "not_a_player", "only the players of a game can read its chat over the API")
 		return
 	}
-	msgs, err := h.cfg.Store.GameChat(r.Context(), gameID, h.cfg.Now().Add(-h.cfg.ChatRetention), after, limit)
+	msgs, err := h.cfg.Store.GameChat(r.Context(), gameID, time.Time{}, after, limit)
 	if err != nil {
 		serverError(w, r, err)
 		return

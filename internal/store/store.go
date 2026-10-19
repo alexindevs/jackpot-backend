@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -190,14 +189,6 @@ func (s *Store) AbandonGame(ctx context.Context, gameID int64, at time.Time) err
 	return err
 }
 
-// AbandonUnfinished marks games still "playing" as abandoned. Rooms live in
-// memory, so any game still open when the server starts is one that was cut
-// off by a restart. This is only correct while a single server runs.
-func (s *Store) AbandonUnfinished(ctx context.Context, at time.Time) (int64, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE games SET status = 'abandoned', ended_at = $1 WHERE status = 'playing'`, at)
-	return tag.RowsAffected(), err
-}
-
 // --- chat ---
 
 // AddChat saves a chat line as message number seq of its game. Saving the
@@ -217,30 +208,6 @@ func (s *Store) RoomGame(ctx context.Context, room string) (int64, error) {
 		return 0, ErrNotFound
 	}
 	return id, err
-}
-
-// SweepChat deletes chat older than the cutoff.
-func (s *Store) SweepChat(ctx context.Context, olderThan time.Time) (int64, error) {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM chat_messages WHERE created_at < $1`, olderThan)
-	return tag.RowsAffected(), err
-}
-
-// RunChatSweeper deletes expired chat every interval until ctx ends.
-func (s *Store) RunChatSweeper(ctx context.Context, every, retention time.Duration, log *slog.Logger) {
-	t := time.NewTicker(every)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case now := <-t.C:
-			if n, err := s.SweepChat(ctx, now.Add(-retention)); err != nil {
-				log.Error("chat sweep failed", "err", err)
-			} else if n > 0 {
-				log.Info("chat swept", "deleted", n)
-			}
-		}
-	}
 }
 
 // --- reading ---

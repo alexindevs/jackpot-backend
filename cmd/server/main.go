@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/alexindevs/jackpot-backend/internal/api"
+	"github.com/alexindevs/jackpot-backend/internal/live"
 	"github.com/alexindevs/jackpot-backend/internal/room"
 	"github.com/alexindevs/jackpot-backend/internal/store"
 	"github.com/alexindevs/jackpot-backend/internal/transport"
@@ -92,11 +93,6 @@ func run(log *slog.Logger) error {
 		if err := db.Migrate(ctx); err != nil {
 			return err
 		}
-		if n, err := db.AbandonUnfinished(ctx, time.Now()); err != nil {
-			return err
-		} else if n > 0 {
-			log.Warn("marked games cut off by the last shutdown as abandoned", "games", n)
-		}
 		writer = store.NewWriter(db, log, 1024)
 		roomCfg.OnRecord = writer.Record
 		onSignIn = func(id transport.Identity) {
@@ -105,7 +101,7 @@ func run(log *slog.Logger) error {
 		apiStore = db
 		go func() {
 			defer close(sweepDone)
-			db.RunChatSweeper(ctx, time.Minute, chatRetention, log)
+			db.RunSweeper(ctx, time.Minute, chatRetention, log)
 		}()
 		log.Info("database connected")
 	} else {
@@ -121,14 +117,18 @@ func run(log *slog.Logger) error {
 		OnSignIn:       onSignIn,
 		Log:            log,
 	})
+	if db != nil {
+		if err := live.Restore(ctx, db, m, writer, log); err != nil {
+			return err
+		}
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", api.Handler(api.Config{
-		Store:         apiStore,
-		Rooms:         m,
-		Auth:          auth,
-		Origins:       origins,
-		ChatRetention: chatRetention,
+		Store:   apiStore,
+		Rooms:   m,
+		Auth:    auth,
+		Origins: origins,
 	}))
 	mux.Handle("/", m.Handler())
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}

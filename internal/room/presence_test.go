@@ -89,22 +89,44 @@ func TestLobbyDisconnectRemovesAfterTheWindow(t *testing.T) {
 	}
 }
 
-func TestEveryoneGoneClosesTheRoomAfterAMinute(t *testing.T) {
+func TestEveryoneGoneFromAGamePausesItAfterAMinute(t *testing.T) {
 	h := newHarness(t, 44)
 	h.playing(4)
 	for i := 0; i < 4; i++ {
 		h.must(pid(i), Disconnect{})
 	}
 	h.advance(59 * time.Second)
-	if h.r.Phase() == PhaseClosed {
-		t.Fatal("closed early")
+	if _, paused := h.r.Paused(); paused {
+		t.Fatal("paused early")
 	}
 	outs := h.advance(time.Second)
+	until, paused := h.r.Paused()
+	if !paused || h.r.Phase() != PhasePlaying || !anyMsg[Paused](outs) {
+		t.Fatalf("phase = %v, paused = %v", h.r.Phase(), paused)
+	}
+	if want := h.now.Add(h.r.cfg.PausedFor); !until.Equal(want) {
+		t.Errorf("paused until %v, want %v", until, want)
+	}
+	// A paused game waits: nothing runs, even days later... until the limit.
+	h.advance(23 * time.Hour)
+	if h.r.Phase() == PhaseClosed {
+		t.Fatal("a paused game should wait for its players")
+	}
+	outs = h.advance(time.Hour + time.Second)
 	if h.r.Phase() != PhaseClosed || !anyMsg[RoomClosed](outs) {
-		t.Fatalf("phase = %v", h.r.Phase())
+		t.Fatalf("after the wait the game is given up: phase = %v", h.r.Phase())
 	}
 	if _, err := h.r.Handle(h.now, pid(0), Connect{}); err != ErrClosed {
 		t.Errorf("a closed room says %v", err)
+	}
+}
+
+func TestAnEmptyLobbyStillClosesAfterAMinute(t *testing.T) {
+	h := newHarness(t, 45)
+	h.must(pid(0), Disconnect{})
+	h.advance(time.Minute)
+	if h.r.Phase() != PhaseClosed {
+		t.Fatalf("phase = %v", h.r.Phase())
 	}
 }
 

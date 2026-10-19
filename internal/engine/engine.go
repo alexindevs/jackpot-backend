@@ -33,8 +33,9 @@ type pendingReveal struct {
 // State is one game. It is not safe for concurrent use: the room runner owns
 // it and calls Apply from a single goroutine.
 type State struct {
-	cfg Config
-	rng *rand.Rand
+	cfg   Config
+	rng   *rand.Rand
+	setup *Setup // how this game was created, when it was created from a Setup
 
 	phase   Phase
 	round   int

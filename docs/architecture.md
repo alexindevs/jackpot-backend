@@ -16,8 +16,9 @@ Decisions are the author's. Anything marked **unverified** is an inference from 
 ## Language and storage
 
 - **Go.**
-- **SQL (Postgres)**, not NoSQL. The data is relational: players, teams, rounds, and who proclaimed and who held the cards for each win. MVP and "legendary duos" leaderboards are aggregates over that. Chat is kept for 24 hours via an `expires_at` column and a periodic sweep.
-- Run a **single instance** first, with rooms in memory. Several instances would need sticky routing or a shared pub/sub layer. Redis would only come in at that point.
+- **SQL (Postgres)**, not NoSQL. The data is relational: players, teams, rounds, and who proclaimed and who held the cards for each win. MVP and "legendary duos" leaderboards are aggregates over that. Chat and saved game data are cleared 24 hours after a game ends by a periodic sweep (see below).
+- Run a **single instance** first. Rooms run in memory, but a started game is also **saved as events**: the engine is deterministic, so its setup (rules, teams, the two random seeds) plus every command applied since the start rebuild it exactly (`engine.Replay`). The room reports each command (`CommandApplied`) and the async writer stores it in `game_events`. On start, `internal/live` loads the unfinished games, replays them, and brings them back as **paused** rooms (`room.Restore`), which resume when their players return. A game with a hole in its log comes back at the last complete step; one that can't be rebuilt is abandoned. Several instances would need sticky routing or a shared pub/sub layer; Redis would only come in at that point.
+- **Retention:** 24 hours after a game ends, a sweeper deletes its events, setup and chat. The summary rows stay for good. Chat is therefore kept until 24 hours after the game ends, not per message.
 
 ## What start.ng provides
 
