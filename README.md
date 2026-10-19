@@ -71,4 +71,22 @@ api.example.com {
 }
 ```
 
+### Render (or a similar host)
+
+The server is ready for a platform like Render: it listens on the `PORT` the host provides, serves plain HTTP and WebSocket for the host's proxy to wrap in TLS, and pings every client every 25 seconds so idle connections aren't dropped by a proxy. On Render you would create a **Web Service** from this repo (Docker, using the `Dockerfile`) and set:
+
+| Variable | Value |
+| --- | --- |
+| `JACKPOT_GAME` | `jackpot` |
+| `JACKPOT_ORIGINS` | `jackpot.start.ng` |
+| `DATABASE_URL` | the connection string of a Postgres database (Render's, or any other) |
+
+Do not set `JACKPOT_DEV`. The socket URL is then `wss://<your-service>.onrender.com/ws` and the API is under `https://<your-service>.onrender.com/api`.
+
+These points about Render come from memory and weren't checked against its current docs, so check them before relying on them:
+
+- Web services get an `onrender.com` address with TLS, and WebSockets work on them.
+- **Free instances spin down after a period without traffic and take a while to wake up.** Games live in memory, so a spin-down ends every game and lobby. Use an always-on paid instance for real play.
+- Free Postgres databases may expire after a limited time.
+
 Run **one** server instance. Rooms live in memory, and on start the server marks any game still open in the database as abandoned, which assumes nothing else is running games.

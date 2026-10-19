@@ -2,7 +2,8 @@
 //
 // Configuration comes from environment variables:
 //
-//	JACKPOT_ADDR        listen address (default ":8080")
+//	JACKPOT_ADDR        listen address. If unset, the PORT variable that most hosts
+//	                    (Render, Heroku, Fly) provide is used, else ":8080"
 //	JACKPOT_GAME        the start.ng game name (default "jackpot")
 //	JACKPOT_ORIGINS     comma-separated hosts allowed to open a socket or call
 //	                    the API from a browser (default "<game>.start.ng")
@@ -53,7 +54,14 @@ func main() {
 
 func run(log *slog.Logger) error {
 	game := env("JACKPOT_GAME", "jackpot")
-	addr := env("JACKPOT_ADDR", ":8080")
+	addr := os.Getenv("JACKPOT_ADDR")
+	if addr == "" {
+		if port := os.Getenv("PORT"); port != "" {
+			addr = ":" + port
+		} else {
+			addr = ":8080"
+		}
+	}
 	origins := strings.Split(env("JACKPOT_ORIGINS", game+".start.ng"), ",")
 	dev := os.Getenv("JACKPOT_DEV") == "1"
 

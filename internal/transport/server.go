@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -43,6 +44,7 @@ func (m *Manager) serveWS(w http.ResponseWriter, r *http.Request) {
 	}
 	m.register(c)
 	go c.writeLoop(ctx)
+	go m.keepAlive(ctx, c)
 	c.enqueue(m.hello(c))
 	m.Connected(c.ident.ID)
 
@@ -51,6 +53,30 @@ func (m *Manager) serveWS(w http.ResponseWriter, r *http.Request) {
 	c.closeWith(websocket.StatusNormalClosure, "bye")
 	if m.unregister(c) {
 		m.Disconnected(c.ident.ID)
+	}
+}
+
+// keepAlive pings the client on a schedule. The reply keeps proxies from
+// treating a quiet connection as dead, and a client that has silently gone
+// away is dropped instead of lingering until a timeout far away.
+func (m *Manager) keepAlive(ctx context.Context, c *conn) {
+	t := time.NewTicker(m.cfg.PingInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.done:
+			return
+		case <-t.C:
+			pctx, cancel := context.WithTimeout(ctx, m.cfg.PingTimeout)
+			err := c.ws.Ping(pctx)
+			cancel()
+			if err != nil {
+				c.closeWith(websocket.StatusGoingAway, "no answer to ping")
+				return
+			}
+		}
 	}
 }
 

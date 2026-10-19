@@ -32,6 +32,12 @@ type Config struct {
 	// names and looks can be saved. It must not block.
 	OnSignIn func(Identity)
 
+	// PingInterval is how often the server pings each client. Proxies drop
+	// connections that stay silent, and a lobby can be quiet for minutes. A
+	// client that doesn't answer within PingTimeout is disconnected.
+	PingInterval time.Duration
+	PingTimeout  time.Duration
+
 	AuthTimeout  time.Duration // how long a new socket has to authenticate
 	SendQueue    int           // per-connection outgoing queue; a full queue drops the connection
 	MaxReadBytes int64
@@ -42,6 +48,12 @@ type Config struct {
 func (c *Config) setDefaults() {
 	if c.Now == nil {
 		c.Now = time.Now
+	}
+	if c.PingInterval == 0 {
+		c.PingInterval = 25 * time.Second
+	}
+	if c.PingTimeout == 0 {
+		c.PingTimeout = 10 * time.Second
 	}
 	if c.AuthTimeout == 0 {
 		c.AuthTimeout = 5 * time.Second

@@ -327,3 +327,44 @@ func TestRevealOptionsAreOnlyForTheTarget(t *testing.T) {
 		}
 	}
 }
+
+func TestKeepAlivePingsKeepAnIdleConnectionOpen(t *testing.T) {
+	_, url := newTestServer(t, func(c *Config) {
+		c.PingInterval = 20 * time.Millisecond
+		c.PingTimeout = time.Second
+	})
+	c := dial(t, url, "alice")
+	c.wait("hello", isT("hello"))
+	time.Sleep(300 * time.Millisecond) // many ping rounds, with nothing else going on
+	c.send(msg{"type": "ping"})
+	c.wait("pong", isT("pong"))
+}
+
+func TestAClientThatStopsAnsweringPingsIsDropped(t *testing.T) {
+	_, url := newTestServer(t, func(c *Config) {
+		c.PingInterval = 20 * time.Millisecond
+		c.PingTimeout = 80 * time.Millisecond
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ws, _, err := websocket.Dial(ctx, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ws.CloseNow() })
+	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"type":"auth","token":"dev:alice"}`)); err != nil {
+		t.Fatal(err)
+	}
+	// This client never reads, so it never answers a ping. Once the server
+	// has given up on it, the first read reports a closed connection.
+	time.Sleep(500 * time.Millisecond)
+	rctx, rcancel := context.WithTimeout(ctx, 2*time.Second)
+	defer rcancel()
+	var last error
+	for i := 0; i < 50 && last == nil; i++ {
+		_, _, last = ws.Read(rctx)
+	}
+	if last == nil || rctx.Err() != nil {
+		t.Fatalf("the server should have closed the connection (read error: %v, ctx: %v)", last, rctx.Err())
+	}
+}
