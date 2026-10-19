@@ -32,7 +32,7 @@ Anything not marked is Decided.
 
 - Hold 4 cards of the same type.
 - Your **partner** proclaims "Jackpot". You can never proclaim for yourself.
-- A proclamation is **rejected, with no penalty**, while the partner of the winner holds the passing card (has 5 cards).
+- A proclamation is **rejected, with no penalty**, while the player who would win (the proclaimer's partner) holds the passing card (has 5 cards).
 - At any other time a proclamation is accepted. If it's **false** (the proclaimer's partner doesn't hold 4 of a kind), the proclaimer **loses one suspicion point**.
 - **Provisional:** a false proclamation made at 0 points removes the proclaimer's right to proclaim for the rest of the game. The alternative is a separate points pool for proclamations. Not decided.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
@@ -59,7 +59,7 @@ Anything not marked is Decided.
 
 ## 5. Signalling
 
-- Players send gestures from a **fixed vocabulary**. Real signals and fakes use the same mechanism, and the server can't tell them apart.
+- Players send gestures from a **fixed vocabulary**. Fake signals are allowed and use the same mechanism as real ones. The server doesn't need to tell them apart. Only the players have to.
 - **Visibility is rolled once per signal:**
   - 20% of signals go to the sender's partner only (`team` scope).
   - 80% go to everyone, including the partner (`room` scope).
@@ -96,7 +96,16 @@ Anything not marked is Decided.
 - There is a **live public chat**, shown in a pane beside the main view while players pass cards.
 - Everyone in the game sees it. It is a normal part of play: distractions, bluffs, rules arguments and accusations all happen here.
 - Partners may use it for coded messages, knowing opponents can read it.
-- **Open:** whether removed players and spectators can read it, rate limits and moderation, and whether messages are stored.
+- **Spectators and removed players can read it but can't post.**
+- Messages are **stored for 24 hours**, so disputed wins can be checked.
+- It's expected to get spammy. **Moderation is out of MVP scope** and planned soon after.
+- **Open:** the rate-limit values (a config value is enough for now).
+
+## 11. Spectators
+
+- Spectators can read the public chat (section 10) but not post.
+- **Temporary perk:** spectators can **view every player's cards**. This is expected to be removed once people start abusing it.
+- **Open:** whether removed players also see everyone's cards, or only the chat.
 
 ---
 
@@ -104,3 +113,4 @@ Anything not marked is Decided.
 
 - **Pool exhaustion:** resets return cards of one type but need one of each type from the pool. With 11 per type and many resets, the pool can run short of some types. Resets are expected to be rare, but the engine should handle an empty pool explicitly instead of failing, and keep a per-type card count invariant.
 - **Latency:** the ordered queue favours players with better connections, which is why the collection window exists.
+- **Spectator card view:** a spectator who can see every hand can relay it to a friend in the game (voice call, another chat). Keep this behind a single config flag, and make the hidden-information filter role-aware (player vs spectator), so removing the perk is a one-line change.
