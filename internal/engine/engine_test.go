@@ -520,3 +520,72 @@ func TestVoteEndCanPassWhenARemovalShrinksTheTeams(t *testing.T) {
 		t.Error("one of two teams is not a majority")
 	}
 }
+
+func TestProclaimRightIsRestoredNextRound(t *testing.T) {
+	s := started(t, 2, 26)
+	r := rolesOf(s)
+	s.players[r.o1].points = 0
+	mustApply(t, s, Proclaim{By: r.o1}) // false, at 0 points: revoked
+	mustFail(t, s, Proclaim{By: r.o1}, ErrProclaimRevoked)
+
+	setHand(t, s, r.o1, Hand{0, 4, 0, 0})
+	mustApply(t, s, Proclaim{By: r.o2}) // the partner wins the round
+	mustApply(t, s, StartRound{})
+	if !s.players[r.o1].canProclaim {
+		t.Error("the right to proclaim should come back with the next round")
+	}
+}
+
+func TestNewRejectsEmptyPlayerID(t *testing.T) {
+	specs := testSpecs(2)
+	specs[0].ID = ""
+	if _, err := New(DefaultConfig(), specs, testRNG(1)); err == nil {
+		t.Error("expected an error for an empty player id")
+	}
+}
+
+// When the leaving team's partner sits right after the holder, the card must
+// skip past them to someone who is staying.
+func TestRemoveTeamPassesPastTheLeavingPartner(t *testing.T) {
+	s := newGame(t, 3, 27)
+	s.seats = []PlayerID{"t0a", "t0b", "t1a", "t1b", "t2a", "t2b"}
+	mustApply(t, s, StartRound{})
+	if h := s.Holder(); h != "t0a" {
+		s.transfer(h, "t0a", s.Hand(h).Types()[0], false) // move the passing card to t0a
+	}
+	if err := s.CheckInvariants(); err != nil {
+		t.Fatal(err)
+	}
+	evs := mustApply(t, s, RemoveTeam{Team: 0})
+	if p, _ := find[Passed](evs); p.To != "t1a" {
+		t.Errorf("passing card went to %s, want t1a", p.To)
+	}
+}
+
+func TestRemoveTeamClearsPromptsOwedByTheLeavers(t *testing.T) {
+	// A caught holder who still owes a forced pass.
+	s := started(t, 3, 28)
+	h := s.Holder()
+	setHand(t, s, h, Hand{4, 1, 0, 0})
+	var by PlayerID
+	for _, id := range s.Seats() {
+		if s.players[id].team != s.players[h].team {
+			by = id
+			break
+		}
+	}
+	mustApply(t, s, Suspect{By: by, Target: h})
+	mustApply(t, s, RemoveTeam{Team: s.players[h].team})
+	if s.forcedPass != "" {
+		t.Error("forced pass should have been cleared")
+	}
+
+	// A player with a reveal still pending.
+	s = started(t, 3, 29)
+	target := s.partnerOf(s.Holder())
+	mustApply(t, s, Suspect{By: s.Holder(), Target: target})
+	mustApply(t, s, RemoveTeam{Team: s.players[target].team})
+	if len(s.pendingReveals) != 0 {
+		t.Error("pending reveal should have been cleared")
+	}
+}

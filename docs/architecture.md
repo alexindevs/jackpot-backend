@@ -37,19 +37,27 @@ From https://start.ng/docs.md:
 Test these as soon as a stub game is live at a `*.start.ng` address. Per the docs, sign-in doesn't work from a local file.
 
 1. The player endpoint can be called **from a server**. The docs only describe browser use.
-2. A page on `*.start.ng` may open a **WebSocket to our own domain**. The docs don't mention any restriction, but I don't know.
-3. The game's **name** is first come, first served ("the first person to put a name live owns it"), so claim it early.
+2. A page on `*.start.ng` may open a **WebSocket to our own domain**. The docs don't mention any restriction, but I don't know. What could stop it:
+   - A `Content-Security-Policy` `connect-src` header on start.ng's pages. This is the most likely blocker, and the docs don't say whether start.ng sets one.
+   - Mixed content: the page is https, so `ws://` is blocked. We need `wss://` on a real domain with a valid certificate.
+   - Our own side: the VPS firewall, or a reverse proxy not forwarding the WebSocket upgrade headers, or an Origin check that rejects `https://jackpot.start.ng`.
+   - Browsers don't do CORS preflights for WebSockets, so the server's Origin check is the only gate on our side.
+3. The game's name is **`jackpot`**, and it isn't published yet. Names are first come, first served ("the first person to put a name live owns it"), so publish a stub early to claim it.
 4. The player's `face` image only comes from the connect page. The player endpoint returns `style` but not `face`, so other players' characters have to be drawn from `style`.
 
 ## Frontend contract notes
 
 - Allow the WebSocket origin `https://<name>.start.ng`.
 - Consider reusing start.ng's close codes: `4401` sign-in needed, `4403` room full, `4409` joined from another tab.
-- Guests (no id, named "Guest") can't be told apart, so the server needs its own handle for them if guests may play. **Open.**
+- **Guests can't play.** The socket requires a valid signed-in session. A guest is turned away with close code `4401`.
+
+## Decided
+
+- Hosting: a VPS (which provider and how it's deployed is not decided).
+- Game name: `jackpot`.
+- No guests.
 
 ## Open decisions
 
-- Whether guests can play, and how they reconnect.
-- Where this server is hosted.
-- The game's name on start.ng.
+- Deck size for resets (see Known risks in `docs/rules.md`).
 - Timeouts for the reveal and forced-pass prompts.

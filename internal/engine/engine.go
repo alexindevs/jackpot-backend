@@ -20,7 +20,7 @@ type player struct {
 	active      bool
 	hand        Hand
 	points      int
-	canProclaim bool // revoked by a false proclamation made at 0 points
+	canProclaim bool // revoked for the round by a false proclamation made at 0 points
 }
 
 type pendingReveal struct {
@@ -228,6 +228,7 @@ func (s *State) startRound() ([]Event, error) {
 			s.pool[t]--
 		}
 		p.points = s.cfg.SuspicionPoints
+		p.canProclaim = true
 	}
 	holder := s.seats[s.rng.IntN(len(s.seats))]
 	extra := CardType(s.rng.IntN(NumTypes))

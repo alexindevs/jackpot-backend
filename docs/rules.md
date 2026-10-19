@@ -15,7 +15,8 @@ Anything not marked is Decided.
 - 2 to 5 teams, 2 players each (4 to 10 players).
 - 4 card types.
 - Every player starts with one card of each type. One player also gets an extra card of one type, so they start with 5 cards. That extra card is the **passing card**.
-- Copies per type: 11, which covers the 5-team maximum. Cards not dealt form the **pool**.
+- Copies per type: 11, which covers the 5-team maximum. Cards not dealt form the **pool**. *(Under review: see "Pool exhaustion" in Known risks.)*
+- **Only signed-in start.ng players can play.** Guests can't.
 - Before **every round**, each team gets a **private chat for 2 minutes** to agree a signalling code. Teams are expected to use a fresh code each round, since reusing signals lets opponents learn them. This is strategy advice, not an enforced rule.
 - This is the **only** private channel. Once the round starts, partners can only coordinate through signals (section 5) or the public chat (section 10).
 
@@ -34,7 +35,7 @@ Anything not marked is Decided.
 - Your **partner** proclaims "Jackpot". You can never proclaim for yourself.
 - A proclamation is **rejected, with no penalty**, while the player who would win (the proclaimer's partner) holds the passing card (has 5 cards).
 - At any other time a proclamation is accepted. If it's **false** (the proclaimer's partner doesn't hold 4 of a kind), the proclaimer **loses one suspicion point**.
-- **Provisional:** a false proclamation made at 0 points removes the proclaimer's right to proclaim for the rest of the game. The alternative is a separate points pool for proclamations. Not decided.
+- A false proclamation made at **0 points** removes the proclaimer's right to proclaim **for the rest of that round**. The right comes back next round.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
 - A new round **redeals**, and **suspicion points refresh**. Each round begins with the 2-minute private team chat (see section 1).
 - The player who starts with the extra (passing) card is **picked at random** each round. Seating is not reshuffled between rounds, except as described in section 2.
@@ -50,12 +51,12 @@ Anything not marked is Decided.
   - This is judged on the hand **as of the suspicion's position in the event log**. If the player passed one millisecond before the suspicion, they hold 4 cards and show 2.
   - A 5-card hand with 3+2 has only 2 types, so it fails. This is intended.
 - Shown cards are **revealed to the room**. Leaking hand info is part of the game.
-- *(Assumed: when a player fails the check, the room sees the hand they were holding.)*
+- When a player fails the check, the room sees the hand they were holding.
 - *(Assumed: the suspected player chooses which cards to show, with a server-side check and a timeout fallback.)*
 - If they can't show enough different types, they **reset**:
   - Their cards go back to the pool and they get a fresh hand of one card of each type.
   - If they hold the passing card, they **pass it to the next player first, then reset**. With 5 cards of one type, they pass one and reset the rest.
-  - The player is **prompted to choose** which card to pass. *(Provisional. Assumed: if they don't choose before the hold timer runs out, the server passes the odd-one-out card as in section 2.)*
+  - The player is **prompted to choose** which card to pass. *(Assumed: if they don't choose before the hold timer runs out, the server passes the odd-one-out card as in section 2.)*
 - If the partner's proclamation is processed **before** the suspicion, the team wins and the suspicion no longer matters.
 
 ## 5. Signalling
@@ -113,6 +114,11 @@ Anything not marked is Decided.
 
 ## Known risks (not rules)
 
-- **Pool exhaustion:** resets return cards of one type but need one of each type from the pool. With 11 per type and many resets, the pool can run short of some types. Resets are expected to be rare. *(Assumed: if the pool can't supply a type, the engine fills that slot with whatever the pool has, so the hand is still 4 cards, and the reset event reports which types were short. A per-type card count invariant is checked in tests.)*
+- **Pool exhaustion (decision needed):** a reset returns the caught player's cards and deals one of each type, but only the pool supplies cards, and passing never draws from it. In the engine's simulation of resets in a single round (the caught player holds four of one type, built by trading with other players):
+  - 2 and 3 teams with 11 per type: no shortfalls in 3 resets.
+  - 4 teams: the third reset is short of a type about 38% of the time.
+  - **5 teams: the first reset is short about 76% of the time, and the second always is.** The fallback hand (see below) then holds 3 or more of a kind about 62% of the time, so a reset can *help* the player.
+  - Giving the deck `players + 7` cards per type (17 for 5 teams) removed every shortfall through 5 resets in the same simulation. A bigger deck changes nothing except resets.
+  - *(Assumed fallback until decided: if the pool can't supply a type, the engine fills that slot with whatever the pool has, so the hand is still 4 cards, and the reset event reports which types were short.)*
 - **Latency:** the ordered queue favours players with better connections, which is why the collection window exists.
 - **Spectator card view:** a spectator who can see every hand can relay it to a friend in the game (voice call, another chat). Keep this behind a single config flag, and make the hidden-information filter role-aware (player vs spectator), so removing the perk is a one-line change.
