@@ -50,6 +50,7 @@ Anything not marked is Decided.
   - This is judged on the hand **as of the suspicion's position in the event log**. If the player passed one millisecond before the suspicion, they hold 4 cards and show 2.
   - A 5-card hand with 3+2 has only 2 types, so it fails. This is intended.
 - Shown cards are **revealed to the room**. Leaking hand info is part of the game.
+- *(Assumed: when a player fails the check, the room sees the hand they were holding.)*
 - *(Assumed: the suspected player chooses which cards to show, with a server-side check and a timeout fallback.)*
 - If they can't show enough different types, they **reset**:
   - Their cards go back to the pool and they get a fresh hand of one card of each type.
@@ -81,7 +82,8 @@ Anything not marked is Decided.
 
 - A team can drop out at any time. After a **1 minute timeout**, if the leaving player holds the passing card it's passed on, and the **whole team is removed** (both partners). Their cards go **back to the pool**. The remaining teams continue.
 - If only **one team is left, it wins by forfeit**. A game needs at least 2 teams.
-- *(Assumed: disconnects follow the same path as dropping out.)*
+- A player who **disconnects** gets a **90 second reconnect window**. If they haven't reconnected by then, their team is removed as above.
+- **Open:** whether a deliberate drop-out removes the team immediately, or waits out a timer too.
 - A forfeit win **does not count** toward leaderboard or duo stats.
 
 ## 9. Stats and leaderboards
@@ -111,6 +113,6 @@ Anything not marked is Decided.
 
 ## Known risks (not rules)
 
-- **Pool exhaustion:** resets return cards of one type but need one of each type from the pool. With 11 per type and many resets, the pool can run short of some types. Resets are expected to be rare, but the engine should handle an empty pool explicitly instead of failing, and keep a per-type card count invariant.
+- **Pool exhaustion:** resets return cards of one type but need one of each type from the pool. With 11 per type and many resets, the pool can run short of some types. Resets are expected to be rare. *(Assumed: if the pool can't supply a type, the engine fills that slot with whatever the pool has, so the hand is still 4 cards, and the reset event reports which types were short. A per-type card count invariant is checked in tests.)*
 - **Latency:** the ordered queue favours players with better connections, which is why the collection window exists.
 - **Spectator card view:** a spectator who can see every hand can relay it to a friend in the game (voice call, another chat). Keep this behind a single config flag, and make the hidden-information filter role-aware (player vs spectator), so removing the perk is a one-line change.
