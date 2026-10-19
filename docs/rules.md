@@ -16,7 +16,7 @@ Anything not marked is Decided.
 - 4 card types.
 - Every player starts with one card of each type. One player also gets an extra card of one type, so they start with 5 cards. That extra card is the **passing card**.
 - Copies per type: 11, which covers the 5-team maximum. Cards not dealt form the **pool**.
-- Before round 1, each team gets a **private chat for 2 minutes** to agree a signalling code. *(Assumed: once per game, not per round.)*
+- Before **every round**, each team gets a **private chat for 2 minutes** to agree a signalling code. Teams are expected to use a fresh code each round, since reusing signals lets opponents learn them. This is strategy advice, not an enforced rule.
 
 ## 2. Passing
 
@@ -33,7 +33,8 @@ Anything not marked is Decided.
 - At any other time a proclamation is accepted. If it's **false** (the proclaimer's partner doesn't hold 4 of a kind), the proclaimer **loses one suspicion point**.
 - **Provisional:** a false proclamation made at 0 points removes the proclaimer's right to proclaim for the rest of the game. The alternative is a separate points pool for proclamations. Not decided.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
-- **Open:** what happens between rounds (redeal, and whether suspicion points refresh each round or last the whole game).
+- Each new round begins with the 2-minute private team chat (see section 1).
+- **Open:** what else happens between rounds (redeal, and whether suspicion points refresh each round or last the whole game).
 
 ## 4. Suspicion
 
