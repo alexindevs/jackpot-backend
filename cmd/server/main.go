@@ -119,6 +119,7 @@ func run(log *slog.Logger) error {
 		Auth:           auth,
 		OriginPatterns: origins,
 		OnSignIn:       onSignIn,
+		Log:            log,
 	})
 
 	mux := http.NewServeMux()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -28,9 +29,21 @@ func (m *Manager) serveWS(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(m.cfg.MaxReadBytes)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	opened := m.cfg.Now()
 
 	c, err := m.authenticate(ctx, ws)
 	if err != nil {
+		reason := "auth_failed"
+		switch {
+		case errors.Is(err, errAuthTimeout):
+			reason = "auth_timeout"
+		case errors.Is(err, errBadMessage):
+			reason = "auth_bad_message"
+		case !errors.Is(err, ErrUnauthorized):
+			reason = "auth_unavailable"
+		}
+		m.countDisconnect(reason)
+		m.cfg.Log.Info("client rejected", "reason", reason, "after", m.cfg.Now().Sub(opened).Round(time.Millisecond).String())
 		if errors.Is(err, ErrUnauthorized) || errors.Is(err, errBadMessage) {
 			_ = ws.Close(codeAuthRequired, "sign in required")
 		} else {
@@ -45,40 +58,92 @@ func (m *Manager) serveWS(w http.ResponseWriter, r *http.Request) {
 	m.register(c)
 	go c.writeLoop(ctx)
 	go m.keepAlive(ctx, c)
+	c.lastRead.Store(m.cfg.Now().UnixNano())
 	c.enqueue(m.hello(c))
 	m.Connected(c.ident.ID)
 
-	m.readLoop(ctx, c)
+	readErr := m.readLoop(ctx, c)
 
-	c.closeWith(websocket.StatusNormalClosure, "bye")
+	// Work out why it ended, for the log. If the server closed it, we know
+	// exactly; otherwise it was the client or the network.
+	reason, code := c.closedBecause(), -1
+	if reason == "" {
+		reason, code = classifyReadError(readErr)
+	}
+	m.countDisconnect(reason)
+	now := m.cfg.Now()
+	m.cfg.Log.Info("client disconnected",
+		"player", string(c.ident.ID),
+		"reason", reason,
+		"code", code,
+		"connected_for", now.Sub(opened).Round(time.Second).String(),
+		"idle_for", now.Sub(time.Unix(0, c.lastRead.Load())).Round(time.Second).String(),
+		"received", c.rx.Load(),
+		"sent", c.tx.Load(),
+	)
+
+	c.closeWith(websocket.StatusNormalClosure, "bye", reason)
 	if m.unregister(c) {
 		m.Disconnected(c.ident.ID)
 	}
 }
 
-// keepAlive pings the client on a schedule. The reply keeps proxies from
-// treating a quiet connection as dead, and a client that has silently gone
-// away is dropped instead of lingering until a timeout far away.
+// classifyReadError says why a client's connection ended when the server did
+// not close it. A close frame with a normal code means the client chose to
+// leave (closed the tab, navigated away, signed out). No close frame at all
+// means the connection was cut: the network dropped.
+func classifyReadError(err error) (reason string, code int) {
+	status := websocket.CloseStatus(err)
+	switch {
+	case status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway:
+		return "client_closed", int(status)
+	case status != -1:
+		return "client_closed_abnormally", int(status)
+	case errors.Is(err, context.Canceled):
+		return "server_stopping", -1
+	case err == nil:
+		return "client_closed", -1
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "EOF"), strings.Contains(msg, "reset"), strings.Contains(msg, "broken pipe"),
+		strings.Contains(msg, "closed network connection"), strings.Contains(msg, "timed out"), strings.Contains(msg, "timeout"):
+		return "network_drop", -1
+	}
+	return "error", -1
+}
+
+// keepAlive pings the client on a schedule and sends it a heartbeat message.
+// The ping keeps proxies from treating a quiet connection as dead, and a
+// client that has silently gone away is dropped instead of lingering. The
+// heartbeat is for the page: browsers can't observe pings, so without a
+// message of its own the page can't tell a quiet connection from a dead one.
 func (m *Manager) keepAlive(ctx context.Context, c *conn) {
-	t := time.NewTicker(m.cfg.PingInterval)
-	defer t.Stop()
+	ping := time.NewTicker(m.cfg.PingInterval)
+	defer ping.Stop()
+	beat := time.NewTicker(m.cfg.HeartbeatInterval)
+	defer beat.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-c.done:
 			return
-		case <-t.C:
+		case <-beat.C:
+			c.enqueue(encode(outbound{T: "heartbeat", D: map[string]any{"serverTime": m.cfg.Now()}}))
+		case <-ping.C:
 			pctx, cancel := context.WithTimeout(ctx, m.cfg.PingTimeout)
 			err := c.ws.Ping(pctx)
 			cancel()
 			if err != nil {
-				c.closeWith(websocket.StatusGoingAway, "no answer to ping")
+				c.closeWith(websocket.StatusGoingAway, "no answer to ping", "ping_timeout")
 				return
 			}
 		}
 	}
 }
+
+var errAuthTimeout = errors.New("sign-in timed out")
 
 // authenticate reads the first message, which must carry the player's token.
 func (m *Manager) authenticate(ctx context.Context, ws *websocket.Conn) (*conn, error) {
@@ -86,6 +151,9 @@ func (m *Manager) authenticate(ctx context.Context, ws *websocket.Conn) (*conn, 
 	defer cancel()
 	typ, data, err := ws.Read(actx)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, errAuthTimeout
+		}
 		return nil, ErrUnauthorized
 	}
 	var in inbound
@@ -99,65 +167,102 @@ func (m *Manager) authenticate(ctx context.Context, ws *websocket.Conn) (*conn, 
 	return newConn(ws, ident, m.cfg.SendQueue, m.cfg.RatePerSec, m.cfg.RateBurst, m.cfg.Now()), nil
 }
 
-func (m *Manager) readLoop(ctx context.Context, c *conn) {
+// readLoop handles messages until the connection ends, and returns the error
+// that ended it.
+func (m *Manager) readLoop(ctx context.Context, c *conn) error {
 	for {
 		typ, data, err := c.ws.Read(ctx)
 		if err != nil {
-			return
+			return err
 		}
+		c.rx.Add(1)
+		c.lastRead.Store(m.cfg.Now().UnixNano())
 		if typ != websocket.MessageText {
-			c.closeWith(websocket.StatusUnsupportedData, "text only")
-			return
+			c.closeWith(websocket.StatusUnsupportedData, "text only", "bad_frame")
+			return nil
 		}
 		if !c.rate.allow(m.cfg.Now()) {
-			c.closeWith(websocket.StatusPolicyViolation, "too many messages")
-			return
+			c.closeWith(websocket.StatusPolicyViolation, "too many messages", "rate_limited")
+			return nil
 		}
 		var in inbound
 		if err := json.Unmarshal(data, &in); err != nil {
-			c.enqueue(fail(nil, errBadMessage))
+			c.enqueue(encode(outbound{T: "error", D: errorBody{Code: errCode(errBadMessage), Message: errBadMessage.Error()}}))
 			continue
 		}
 		m.handle(c, in)
 	}
 }
 
-// handle runs one request from a signed-in client.
+const maxKeyLen = 64
+
+// handle runs one request from a signed-in client. A request with a "key" is
+// remembered per player: if the same key comes again (a retry after a network
+// drop, say, possibly on a new connection) the first reply is sent again and
+// nothing is run twice.
 func (m *Manager) handle(c *conn, in inbound) {
-	user := c.ident.ID
-	reply := func(err error) {
-		if err != nil {
-			c.enqueue(fail(in.ID, err))
-			return
-		}
-		c.enqueue(ok(in.ID))
+	if len(in.Key) > maxKeyLen {
+		c.enqueue(encodeReply(in.ID, errReply(errBadMessage)))
+		return
 	}
+	if in.Key == "" || in.Type == "ping" || in.Type == "list_rooms" {
+		c.enqueue(encodeReply(in.ID, m.process(c, in)))
+		return
+	}
+
+	cache := m.idemFor(c.ident.ID)
+	cache.mu.Lock() // also serialises a retry that races the original on another connection
+	defer cache.mu.Unlock()
+	now := m.cfg.Now()
+	rep, seen := cache.get(in.Key, now)
+	if !seen {
+		rep = m.process(c, in)
+		cache.put(in.Key, rep, now)
+	}
+	c.enqueue(encodeReply(in.ID, rep))
+}
+
+func encodeReply(id json.RawMessage, r reply) []byte {
+	return encode(outbound{T: r.t, ID: id, D: r.d})
+}
+
+func errReply(err error) reply {
+	return reply{t: "error", d: errorBody{Code: errCode(err), Message: err.Error()}}
+}
+
+func okOrError(err error) reply {
+	if err != nil {
+		return errReply(err)
+	}
+	return reply{t: "ok"}
+}
+
+// process does what a request asks and says how to answer it.
+func (m *Manager) process(c *conn, in inbound) reply {
+	user := c.ident.ID
 	switch in.Type {
 	case "ping":
-		c.enqueue(encode(outbound{T: "pong", ID: in.ID}))
+		return reply{t: "pong"}
 	case "list_rooms":
-		c.enqueue(encode(outbound{T: "rooms", ID: in.ID, D: m.ListRooms()}))
+		return reply{t: "rooms", d: m.ListRooms()}
 	case "create_room":
 		id, err := m.CreateRoom(user)
 		if err != nil {
-			reply(err)
-			return
+			return errReply(err)
 		}
-		c.enqueue(encode(outbound{T: "room_created", ID: in.ID, D: map[string]string{"room": id}}))
+		return reply{t: "room_created", d: map[string]string{"room": id}}
 	case "join":
-		reply(m.Join(user, in.Room))
+		return okOrError(m.Join(user, in.Room))
 	case "spectate":
-		reply(m.Spectate(user, in.Room))
+		return okOrError(m.Spectate(user, in.Room))
 	case "leave":
-		reply(m.Leave(user))
-	default:
-		input, err := toInput(in)
-		if err != nil {
-			reply(err)
-			return
-		}
-		reply(m.Do(user, input))
+		return okOrError(m.Leave(user))
 	}
+	input, err := toInput(in)
+	if err != nil {
+		return errReply(err)
+	}
+	return okOrError(m.Do(user, input))
 }
 
 // CloseAll disconnects every client, for shutdown.
@@ -169,6 +274,6 @@ func (m *Manager) CloseAll() {
 	}
 	m.mu.Unlock()
 	for _, c := range conns {
-		c.closeWith(websocket.StatusGoingAway, "server restarting")
+		c.closeWith(websocket.StatusGoingAway, "server restarting", "server_shutdown")
 	}
 }

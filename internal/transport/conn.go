@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -25,6 +26,10 @@ type conn struct {
 	done   chan struct{}
 	once   sync.Once
 	rate   bucket
+
+	why      atomic.Value // string: why the server closed this connection, if it did
+	rx, tx   atomic.Int64 // messages received from and sent to the client
+	lastRead atomic.Int64 // unix nanoseconds of the last message received
 }
 
 type closer interface {
@@ -53,17 +58,25 @@ func (c *conn) enqueue(b []byte) bool {
 	case c.send <- b:
 		return true
 	default:
-		c.closeWith(websocket.StatusPolicyViolation, "too slow")
+		c.closeWith(websocket.StatusPolicyViolation, "too slow", "too_slow")
 		return false
 	}
 }
 
-// closeWith closes the socket, once.
-func (c *conn) closeWith(code websocket.StatusCode, reason string) {
+// closeWith closes the socket, once. why is a short machine-readable reason
+// that ends up in the disconnect log ("replaced", "too_slow", ...).
+func (c *conn) closeWith(code websocket.StatusCode, text, why string) {
 	c.once.Do(func() {
+		c.why.Store(why)
 		close(c.done)
-		go func() { _ = c.closer.Close(code, reason) }()
+		go func() { _ = c.closer.Close(code, text) }()
 	})
+}
+
+// closedBecause is the reason the server closed the connection, or "".
+func (c *conn) closedBecause() string {
+	s, _ := c.why.Load().(string)
+	return s
 }
 
 func (c *conn) writeLoop(ctx context.Context) {
@@ -78,9 +91,10 @@ func (c *conn) writeLoop(ctx context.Context) {
 			err := c.ws.Write(wctx, websocket.MessageText, b)
 			cancel()
 			if err != nil {
-				c.closeWith(websocket.StatusInternalError, "write failed")
+				c.closeWith(websocket.StatusInternalError, "write failed", "write_failed")
 				return
 			}
+			c.tx.Add(1)
 		}
 	}
 }

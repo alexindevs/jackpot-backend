@@ -22,6 +22,8 @@ A player may be in only one room at a time. Reconnecting with the same account p
 
 Every request may carry an `"id"` of any JSON type. It is echoed in the reply. The sender is always the signed-in player; there is no field for it.
 
+Any request except `ping` and `list_rooms` may also carry a `"key"`: a random string of at most 64 characters, fresh for each logical action. If the connection drops before the reply arrives, send the same request again with the **same key**, even on a new connection: the server answers with the original result instead of running it a second time (a retried `suspect` costs one point, not two). Keys belong to the player and are remembered for 10 minutes (the latest 64). Use `key`, not `id`, for this: `id` counters restart when the page reloads.
+
 | `type` | Fields | Notes |
 | --- | --- | --- |
 | `ping` | | replies `pong` |
@@ -53,6 +55,7 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 
 **Account and rooms**
 
+- `heartbeat`: `{serverTime}`, sent every 20 seconds whether or not anything else is happening. If nothing at all arrives for about 50 seconds, treat the connection as dead and reconnect.
 - `hello`: `{you:{id,name,style}, serverTime}`. Use `serverTime` to correct clock differences when showing countdowns.
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
 - `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable}`.

@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"io"
+	"log/slog"
 	mrand "math/rand/v2"
 	"sync"
 	"time"
@@ -32,6 +34,25 @@ type Config struct {
 	// names and looks can be saved. It must not block.
 	OnSignIn func(Identity)
 
+	// Log receives the server's operational log, including one line for every
+	// connection that ends, with the reason. Defaults to discarding.
+	Log *slog.Logger
+
+	// HeartbeatInterval is how often the server sends each client a
+	// {"t":"heartbeat"} message. Browsers can't see WebSocket pings, so this
+	// is what lets a page notice a dead connection: if nothing at all has
+	// arrived for a couple of intervals, reconnect.
+	HeartbeatInterval time.Duration
+
+	// A request that carries a "key" is run once: a retry with the same key
+	// within IdempotencyTTL gets the first reply back. At most IdempotencyMax
+	// keys are remembered per player.
+	IdempotencyTTL time.Duration
+	IdempotencyMax int
+
+	// StatsInterval is how often a summary of disconnect reasons is logged.
+	StatsInterval time.Duration
+
 	// PingInterval is how often the server pings each client. Proxies drop
 	// connections that stay silent, and a lobby can be quiet for minutes. A
 	// client that doesn't answer within PingTimeout is disconnected.
@@ -48,6 +69,21 @@ type Config struct {
 func (c *Config) setDefaults() {
 	if c.Now == nil {
 		c.Now = time.Now
+	}
+	if c.Log == nil {
+		c.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	if c.HeartbeatInterval == 0 {
+		c.HeartbeatInterval = 20 * time.Second
+	}
+	if c.IdempotencyTTL == 0 {
+		c.IdempotencyTTL = 10 * time.Minute
+	}
+	if c.IdempotencyMax == 0 {
+		c.IdempotencyMax = 64
+	}
+	if c.StatsInterval == 0 {
+		c.StatsInterval = 10 * time.Minute
 	}
 	if c.PingInterval == 0 {
 		c.PingInterval = 25 * time.Second
@@ -89,18 +125,75 @@ type Manager struct {
 	userRoom map[engine.PlayerID]string // who is in which room (as player or spectator)
 	conns    map[engine.PlayerID]*conn
 	idents   map[engine.PlayerID]Identity
+	idem     map[engine.PlayerID]*idemCache
+
+	statsMu sync.Mutex
+	stats   map[string]int64 // disconnects by reason since the last summary
 }
 
 // NewManager starts a manager. Rooms stop when ctx ends.
 func NewManager(ctx context.Context, cfg Config) *Manager {
 	cfg.setDefaults()
-	return &Manager{
+	m := &Manager{
 		cfg:      cfg,
 		ctx:      ctx,
 		rooms:    map[string]*managed{},
 		userRoom: map[engine.PlayerID]string{},
 		conns:    map[engine.PlayerID]*conn{},
 		idents:   map[engine.PlayerID]Identity{},
+		idem:     map[engine.PlayerID]*idemCache{},
+		stats:    map[string]int64{},
+	}
+	m.wg.Add(1)
+	go m.statsLoop()
+	return m
+}
+
+// idemFor is a player's idempotency cache.
+func (m *Manager) idemFor(user engine.PlayerID) *idemCache {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := m.idem[user]
+	if c == nil {
+		c = newIdemCache(m.cfg.IdempotencyTTL, m.cfg.IdempotencyMax)
+		m.idem[user] = c
+	}
+	return c
+}
+
+// countDisconnect adds one to a reason's tally.
+func (m *Manager) countDisconnect(reason string) {
+	m.statsMu.Lock()
+	m.stats[reason]++
+	m.statsMu.Unlock()
+}
+
+// statsLoop logs a summary of why connections ended, every StatsInterval, so
+// patterns (lots of network drops, lots of slow clients) show up without
+// reading every line.
+func (m *Manager) statsLoop() {
+	defer m.wg.Done()
+	t := time.NewTicker(m.cfg.StatsInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-t.C:
+			m.statsMu.Lock()
+			summary := m.stats
+			m.stats = map[string]int64{}
+			m.statsMu.Unlock()
+			if len(summary) == 0 {
+				continue
+			}
+			attrs := make([]any, 0, len(summary)*2+2)
+			attrs = append(attrs, "window", m.cfg.StatsInterval.String())
+			for reason, n := range summary {
+				attrs = append(attrs, reason, n)
+			}
+			m.cfg.Log.Info("disconnect summary", attrs...)
+		}
 	}
 }
 
@@ -140,7 +233,7 @@ func (m *Manager) register(c *conn) {
 	m.idents[c.ident.ID] = c.ident
 	m.mu.Unlock()
 	if old != nil {
-		old.closeWith(codeAnotherTab, "joined from another tab")
+		old.closeWith(codeAnotherTab, "joined from another tab", "replaced")
 	}
 }
 
@@ -162,6 +255,7 @@ func (m *Manager) gcIdentLocked(id engine.PlayerID) {
 	if m.conns[id] == nil {
 		if _, inRoom := m.userRoom[id]; !inRoom {
 			delete(m.idents, id)
+			delete(m.idem, id)
 		}
 	}
 }

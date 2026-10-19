@@ -28,6 +28,7 @@ import (
 type inbound struct {
 	Type   string          `json:"type"`
 	ID     json.RawMessage `json:"id,omitempty"`
+	Key    string          `json:"key,omitempty"` // idempotency key: a retry with the same key is not run twice
 	Token  string          `json:"token,omitempty"`
 	Room   string          `json:"room,omitempty"`
 	To     engine.PlayerID `json:"to,omitempty"`
