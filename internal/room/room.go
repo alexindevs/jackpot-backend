@@ -36,6 +36,7 @@ var (
 	ErrNotJoinable     = errors.New("the game has already started")
 	ErrRoomFull        = errors.New("room is full")
 	ErrAlreadyMember   = errors.New("already in this room")
+	ErrNotMember       = errors.New("not in this room")
 	ErrNotPlayer       = errors.New("not a player in this game")
 	ErrAlreadyPaired   = errors.New("already has a partner")
 	ErrNoInvite        = errors.New("no such invitation")
@@ -124,6 +125,9 @@ type Room struct {
 	chatRate map[engine.PlayerID]*bucket
 
 	out []Out
+
+	seqs map[engine.PlayerID]int64 // last sequence number given to each recipient
+	logs map[engine.PlayerID][]Out // what each recipient was last sent, for replay
 }
 
 // New creates a room with its creator already in it.
@@ -138,6 +142,8 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		invites:    map[inviteKey]bool{},
 		dl:         newDeadlines(),
 		chatRate:   map[engine.PlayerID]*bucket{},
+		seqs:       map[engine.PlayerID]int64{},
+		logs:       map[engine.PlayerID][]Out{},
 	}
 	_ = r.join(now, creator)
 	r.syncCountdown(now)
@@ -175,11 +181,61 @@ func (r *Room) Info() Info {
 	}
 }
 
-func (r *Room) ID() string                         { return r.id }
-func (r *Room) Phase() Phase                       { return r.phase }
-func (r *Room) Game() *engine.State                { return r.game }
-func (r *Room) take() []Out                        { o := r.out; r.out = nil; return o }
-func (r *Room) emit(to engine.PlayerID, m Message) { r.out = append(r.out, Out{To: to, Msg: m}) }
+func (r *Room) ID() string          { return r.id }
+func (r *Room) Phase() Phase        { return r.phase }
+func (r *Room) Game() *engine.State { return r.game }
+func (r *Room) take() []Out         { o := r.out; r.out = nil; return o }
+
+// emit queues a message for one recipient. Messages that say something
+// happened get the recipient's next sequence number and are kept, so a client
+// that reconnects can be told what it missed. Messages that only describe the
+// current state (snapshots, hands, timers) are not numbered: a snapshot
+// replaces them.
+func (r *Room) emit(to engine.PlayerID, m Message) {
+	o := Out{To: to, Msg: m}
+	if logged(m) {
+		r.seqs[to]++
+		o.Seq = r.seqs[to]
+		l := append(r.logs[to], o)
+		if len(l) > replayLimit {
+			l = slices.Clone(l[len(l)-replayLimit:])
+		}
+		r.logs[to] = l
+	}
+	r.out = append(r.out, o)
+}
+
+// replayLimit is how many messages are kept per recipient for replay.
+const replayLimit = 500
+
+func logged(m Message) bool {
+	switch m.(type) {
+	case Snapshot, HandUpdate, TimerStarted, Missed:
+		return false
+	}
+	return true
+}
+
+// missed answers a Resume: everything sent to id after sequence number after.
+func (r *Room) missed(id engine.PlayerID, after int64) {
+	l := r.logs[id]
+	cur := r.seqs[id]
+	m := Missed{From: after + 1, To: cur, Complete: true}
+	if after >= cur {
+		m.From = cur + 1
+	}
+	for _, o := range l {
+		if o.Seq > after {
+			m.Messages = append(m.Messages, o)
+		}
+	}
+	// The log is a window: if it no longer reaches back to what the client
+	// last saw, say so and let the snapshot stand in for the gap.
+	if after < cur && (len(l) == 0 || l[0].Seq > after+1) {
+		m.Complete = false
+	}
+	r.emit(id, m)
+}
 
 // NextDeadline is when the room next needs a Tick.
 func (r *Room) NextDeadline() (time.Time, bool) {
@@ -247,6 +303,12 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.teamChat(from, v.Text)
 	case Chat:
 		return r.chat(now, from, v.Text)
+	case Resume:
+		if r.members[from] == nil && !r.spectators[from] {
+			return ErrNotMember
+		}
+		r.missed(from, v.After)
+		return nil
 	case Pass:
 		return r.play(now, from, engine.Pass{Player: from, Card: v.Card})
 	case Suspect:

@@ -53,10 +53,11 @@ type Snapshot struct {
 	Timers     []TimerInfo
 	Game       *GameInfo
 	Chat       []ChatMessage // the most recent public chat, oldest first
+	Seq        int64         // the recipient's sequence number as of this snapshot
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
-	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators)}
+	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer]}
 	for _, id := range r.order {
 		m := r.members[id]
 		s.Players = append(s.Players, PlayerInfo{

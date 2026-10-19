@@ -38,6 +38,9 @@ type (
 	Chat     struct{ Text string }
 )
 
+// Resume asks for everything sent to the sender after sequence number After.
+type Resume struct{ After int64 }
+
 // During a round. These map one to one onto engine commands.
 type (
 	Pass     struct{ Card engine.CardType }
@@ -60,6 +63,7 @@ func (DeclinePartner) isInput() {}
 func (Ready) isInput()          {}
 func (TeamChat) isInput()       {}
 func (Chat) isInput()           {}
+func (Resume) isInput()         {}
 func (Pass) isInput()           {}
 func (Suspect) isInput()        {}
 func (Reveal) isInput()         {}
@@ -71,6 +75,7 @@ func (VoteEnd) isInput()        {}
 type Out struct {
 	To  engine.PlayerID
 	Msg Message
+	Seq int64 // this recipient's sequence number for the message; 0 if not numbered
 }
 
 // Message is anything the room sends.
@@ -159,6 +164,15 @@ type (
 	}
 
 	RoomClosed struct{ Reason string }
+
+	// Missed is the reply to Resume: the numbered messages the recipient has
+	// not seen, oldest first. Complete is false when the room no longer keeps
+	// them all, so the history has a gap (the snapshot still has the state).
+	Missed struct {
+		From, To int64
+		Complete bool
+		Messages []Out
+	}
 )
 
 func (MemberJoined) isMessage()       {}
@@ -181,3 +195,4 @@ func (TimerStarted) isMessage()       {}
 func (ConnectionChanged) isMessage()  {}
 func (RoomClosed) isMessage()         {}
 func (Snapshot) isMessage()           {}
+func (Missed) isMessage()             {}

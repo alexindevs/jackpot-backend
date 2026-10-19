@@ -352,3 +352,63 @@ func TestDisconnectReasonsAreSummarisedPeriodically(t *testing.T) {
 		t.Errorf("summary = %v", r)
 	}
 }
+
+// --- missed-message replay ---
+
+func TestAReconnectingPlayerCanAskForWhatTheyMissed(t *testing.T) {
+	g := startedGame(t, nil)
+	alice, bob := g.players["alice"], g.players["bob"]
+
+	// bob saw some chat, noted its sequence number, then lost his connection
+	alice.mustOK(msg{"type": "chat", "text": "first"})
+	seen := bob.wait("first line", isT("chat_message"))
+	last := seen["s"].(float64)
+	if last < 1 {
+		t.Fatalf("chat_message should be numbered: %v", seen)
+	}
+	_ = bob.ws.Close(websocket.StatusNormalClosure, "tunnel")
+	alice.wait("bob drops", func(m msg) bool {
+		return m["t"] == "connection_changed" && data(m)["player"] == "bob" && data(m)["connected"] == false
+	})
+	alice.mustOK(msg{"type": "chat", "text": "second"})
+	alice.mustOK(msg{"type": "chat", "text": "third"})
+
+	bob2 := dial(t, g.url, "bob")
+	snap := bob2.wait("snapshot", isT("snapshot"))
+	if snap["d"].(map[string]any)["seq"] == nil {
+		t.Fatalf("a snapshot should say where the sequence stood: %v", snap)
+	}
+	r := bob2.request(msg{"type": "resume", "after": last})
+	if r["t"] != "ok" {
+		t.Fatalf("resume: %v", r)
+	}
+	missed := data(bob2.wait("missed", isT("missed")))
+	if missed["complete"] != true {
+		t.Errorf("missed = %v", missed)
+	}
+	var texts []string
+	for _, raw := range missed["messages"].([]any) {
+		m := raw.(map[string]any)
+		if m["t"] == "chat_message" {
+			texts = append(texts, m["d"].(map[string]any)["text"].(string))
+			if m["s"].(float64) <= last {
+				t.Errorf("replayed something already seen: %v", m)
+			}
+		}
+	}
+	if len(texts) != 2 || texts[0] != "second" || texts[1] != "third" {
+		t.Errorf("replayed chat = %v", texts)
+	}
+}
+
+func TestResumeOutsideARoomIsRefusedAndNegativeIsMalformed(t *testing.T) {
+	_, url := newTestServer(t, nil)
+	c := dial(t, url, "alice")
+	c.wait("hello", isT("hello"))
+	if r := c.request(msg{"type": "resume", "after": 0}); data(r)["code"] != "not_in_room" {
+		t.Errorf("outside a room: %v", r)
+	}
+	if r := c.request(msg{"type": "resume", "after": -1}); data(r)["code"] != "bad_message" {
+		t.Errorf("negative: %v", r)
+	}
+}

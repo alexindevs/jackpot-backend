@@ -470,7 +470,7 @@ func (m *Manager) deliver(roomID string, outs []room.Out) {
 		for _, p := range profiles {
 			c.enqueue(encode(outbound{T: "profile", D: p}))
 		}
-		c.enqueue(encodeRoom(o.Msg))
+		c.enqueue(encodeOut(o))
 	}
 }
 

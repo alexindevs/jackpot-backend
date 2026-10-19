@@ -28,6 +28,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | --- | --- | --- |
 | `ping` | | replies `pong` |
 | `list_rooms` | | replies `rooms` |
+| `resume` | `after` | after reconnecting: replays what you missed (see below). `after` is the last `s` you saw, or 0 |
 | `create_room` | | replies `room_created`; you are in the room |
 | `join` | `room` | become a player (lobby only) |
 | `spectate` | `room` | watch |
@@ -79,6 +80,16 @@ Invitations are only delivered to people who are connected at that moment. They 
 - `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
 
 The card in a `passed` event is only real for the player who passed it and the player who received it; everyone else gets `255`.
+
+## Catching up after a reconnect
+
+Messages that say something happened (game events, chat, joins and leaves, invites, connection changes) carry `s`: a number that counts up by one for each message sent to *you* in this room. Snapshots, hand updates and timers have no `s`: they describe the present and a snapshot replaces them.
+
+After reconnecting you get a `snapshot` first. It has `seq`, your `s` at that moment. Everything in it is current. To also get the history you missed, send `{"type":"resume","after":L}` where `L` is the last `s` you saw before the drop (0 if none). Besides `ok`, you get:
+
+`{"t":"missed","d":{"from":L+1,"to":N,"complete":true,"messages":[{"s":..,"t":..,"kind"?:..,"d":..}, ...]}}`
+
+The messages are the originals, oldest first. Those with `s` at or below the snapshot's `seq` are history only: the snapshot already includes their effect, so show them in logs or the chat pane but don't apply them to state a second time. `complete:false` means the server keeps only the last 500 messages per player and yours fell off the end: rely on the snapshot and treat the history as having a gap. Chat has its own catch-up too (the snapshot's `chat`, and the REST `after` parameter).
 
 ## When the socket is down: polling
 

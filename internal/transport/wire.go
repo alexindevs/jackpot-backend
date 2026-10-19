@@ -39,6 +39,7 @@ type inbound struct {
 	Ready  *bool           `json:"ready,omitempty"`
 	Agree  *bool           `json:"agree,omitempty"`
 	Text   string          `json:"text,omitempty"`
+	After  int64           `json:"after,omitempty"` // resume: the last sequence number the client has seen
 }
 
 var errBadMessage = errors.New("malformed message")
@@ -73,6 +74,11 @@ func toInput(in inbound) (room.Input, error) {
 		return room.TeamChat{Text: in.Text}, nil
 	case "chat":
 		return room.Chat{Text: in.Text}, nil
+	case "resume":
+		if in.After < 0 {
+			return nil, fmt.Errorf("%w: after must not be negative", errBadMessage)
+		}
+		return room.Resume{After: in.After}, nil
 	case "pass":
 		if in.Card == nil {
 			return nil, fmt.Errorf("%w: card is required", errBadMessage)
@@ -113,6 +119,7 @@ type outbound struct {
 	T    string          `json:"t"`
 	Kind string          `json:"kind,omitempty"`
 	ID   json.RawMessage `json:"id,omitempty"`
+	S    int64           `json:"s,omitempty"` // this recipient's sequence number, for messages worth replaying
 	D    any             `json:"d,omitempty"`
 }
 
@@ -127,11 +134,23 @@ func encode(o outbound) []byte {
 }
 
 // encodeRoom turns a room message into its wire form.
-func encodeRoom(m room.Message) []byte {
-	if ge, ok := m.(room.GameEvent); ok {
-		return encode(outbound{T: "game_event", Kind: wirejson.Snake(wirejson.TypeName(ge.Event)), D: ge.Event})
+func encodeRoom(m room.Message) []byte { return encodeOut(room.Out{Msg: m}) }
+
+// encodeOut encodes a room output, with its sequence number if it has one.
+func encodeOut(o room.Out) []byte {
+	switch v := o.Msg.(type) {
+	case room.GameEvent:
+		return encode(outbound{T: "game_event", Kind: wirejson.Snake(wirejson.TypeName(v.Event)), S: o.Seq, D: v.Event})
+	case room.Missed:
+		msgs := make([]json.RawMessage, 0, len(v.Messages))
+		for _, mo := range v.Messages {
+			msgs = append(msgs, encodeOut(mo))
+		}
+		return encode(outbound{T: "missed", D: map[string]any{
+			"from": v.From, "to": v.To, "complete": v.Complete, "messages": msgs,
+		}})
 	}
-	return encode(outbound{T: wirejson.Snake(wirejson.TypeName(m)), D: m})
+	return encode(outbound{T: wirejson.Snake(wirejson.TypeName(o.Msg)), S: o.Seq, D: o.Msg})
 }
 
 type errorBody struct {
@@ -163,7 +182,7 @@ var errCodes = []struct {
 	{engine.ErrPartnerHoldsPassingCard, "partner_holds_passing_card"},
 	{engine.ErrWrongPhase, "wrong_phase"}, {engine.ErrUnknownPlayer, "unknown_player"},
 	{engine.ErrGameOver, "game_over"}, {errBadMessage, "bad_message"},
-	{errNotInRoom, "not_in_room"}, {errAlreadyInRoom, "already_in_room"},
+	{room.ErrNotMember, "not_in_room"}, {errNotInRoom, "not_in_room"}, {errAlreadyInRoom, "already_in_room"},
 	{errNoSuchRoom, "no_such_room"}, {errRateLimited, "rate_limited"},
 }
 
