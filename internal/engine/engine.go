@@ -41,6 +41,8 @@ type State struct {
 	teams   []TeamID   // active teams, ascending
 	wins    map[TeamID]int
 	pool    Hand
+	copies  int  // cards of each type in the deck this round, before any minting
+	minted  Hand // cards created this round because the pool ran short on a reset
 	holder  PlayerID
 
 	pendingReveals map[PlayerID]*pendingReveal
@@ -50,22 +52,23 @@ type State struct {
 	result         *Result
 }
 
-// New creates a game. There must be 2 to 5 teams of exactly two players, and
-// the deck must be large enough for everyone to start with one of each type
-// plus the extra passing card.
+// New creates a game. There must be 2 to 5 teams of exactly two players. The
+// deck holds players+SpareCopies of each type, so everyone can start with one
+// of each type plus the extra passing card.
 func New(cfg Config, specs []PlayerSpec, rng *rand.Rand) (*State, error) {
 	n := len(specs)
 	if n < 4 || n > 10 || n%2 != 0 {
 		return nil, fmt.Errorf("need 4 to 10 players in pairs, got %d", n)
 	}
-	if cfg.CopiesPerType < n+1 {
-		return nil, fmt.Errorf("need at least %d copies per type for %d players, got %d", n+1, n, cfg.CopiesPerType)
+	if cfg.SpareCopies < 1 {
+		return nil, errors.New("need at least one spare copy per type for the passing card")
 	}
 	if cfg.SuspicionPoints < 0 || cfg.WinsToFinish < 1 || cfg.WinsToFinish > len(Letters) {
 		return nil, errors.New("invalid config")
 	}
 	s := &State{
 		cfg:            cfg,
+		copies:         n + cfg.SpareCopies,
 		rng:            rng,
 		players:        make(map[PlayerID]*player, n),
 		wins:           map[TeamID]int{},
@@ -93,7 +96,7 @@ func New(cfg Config, specs []PlayerSpec, rng *rand.Rand) (*State, error) {
 	}
 	slices.Sort(s.teams)
 	for t := range s.pool {
-		s.pool[t] = cfg.CopiesPerType
+		s.pool[t] = s.copies
 	}
 	s.seats = seatPlayers(rng, ids, s.teamOf)
 	return s, nil
@@ -218,8 +221,9 @@ func (s *State) startRound() ([]Event, error) {
 	}
 	s.round++
 	for t := range s.pool {
-		s.pool[t] = s.cfg.CopiesPerType
+		s.pool[t] = s.copies
 	}
+	s.minted = Hand{}
 	for _, id := range s.seats {
 		p := s.players[id]
 		p.hand = Hand{}
@@ -363,38 +367,27 @@ func (s *State) autoReveal(id PlayerID) ([]Event, error) {
 }
 
 // reset returns a caught player's cards to the pool and deals them a fresh
-// hand: one of each type. If the pool is short of a type, the slot is filled
-// with whatever the pool has, so the hand is always four cards.
+// hand: exactly one of each type. The spare copies in the deck make it very
+// unlikely that the pool lacks a type, but if it does, the missing card is
+// created (and recorded in minted) so the rule never bends. The deck is
+// rebuilt at the start of every round.
 func (s *State) reset(id PlayerID) Event {
 	p := s.players[id]
 	for t := range p.hand {
 		s.pool[t] += p.hand[t]
 		p.hand[t] = 0
 	}
-	var short []CardType
+	var minted []CardType
 	for t := range p.hand {
 		if s.pool[t] > 0 {
 			s.pool[t]--
-			p.hand[t]++
 		} else {
-			short = append(short, CardType(t))
+			s.minted[t]++
+			minted = append(minted, CardType(t))
 		}
+		p.hand[t] = 1
 	}
-	for p.hand.Total() < NumTypes {
-		var avail []int
-		for t, c := range s.pool {
-			if c > 0 {
-				avail = append(avail, t)
-			}
-		}
-		if len(avail) == 0 {
-			break
-		}
-		t := avail[s.rng.IntN(len(avail))]
-		s.pool[t]--
-		p.hand[t]++
-	}
-	return PlayerReset{Player: id, ShortOf: short}
+	return PlayerReset{Player: id, Minted: minted}
 }
 
 // --- proclaiming ---

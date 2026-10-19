@@ -59,5 +59,6 @@ Test these as soon as a stub game is live at a `*.start.ng` address. Per the doc
 
 ## Open decisions
 
+- Server domain and TLS: a `nip.io` name can serve a stub for testing. For production, a domain the author controls is safer (see the conversation notes: shared rate limits and a third-party DNS dependency).
 - Deck size for resets (see Known risks in `docs/rules.md`).
 - Timeouts for the reveal and forced-pass prompts.

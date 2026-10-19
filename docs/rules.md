@@ -15,7 +15,7 @@ Anything not marked is Decided.
 - 2 to 5 teams, 2 players each (4 to 10 players).
 - 4 card types.
 - Every player starts with one card of each type. One player also gets an extra card of one type, so they start with 5 cards. That extra card is the **passing card**.
-- Copies per type: 11, which covers the 5-team maximum. Cards not dealt form the **pool**. *(Under review: see "Pool exhaustion" in Known risks.)*
+- Copies per type: **players + 7** (11 for 2 teams, 17 for 5 teams). Cards not dealt form the **pool**. Passing never draws from the pool, so the spares only matter for resets.
 - **Only signed-in start.ng players can play.** Guests can't.
 - Before **every round**, each team gets a **private chat for 2 minutes** to agree a signalling code. Teams are expected to use a fresh code each round, since reusing signals lets opponents learn them. This is strategy advice, not an enforced rule.
 - This is the **only** private channel. Once the round starts, partners can only coordinate through signals (section 5) or the public chat (section 10).
@@ -54,7 +54,8 @@ Anything not marked is Decided.
 - When a player fails the check, the room sees the hand they were holding.
 - *(Assumed: the suspected player chooses which cards to show, with a server-side check and a timeout fallback.)*
 - If they can't show enough different types, they **reset**:
-  - Their cards go back to the pool and they get a fresh hand of one card of each type.
+  - Their cards go back to the pool and they get a fresh hand of **exactly one card of each type**, always.
+  - *(Assumed: if the pool ever lacks a type, that card is created, so the rule never bends. The deck is rebuilt every round, so this never carries over. With players + 7 per type it didn't happen through 5 resets in a round in simulation.)*
   - If they hold the passing card, they **pass it to the next player first, then reset**. With 5 cards of one type, they pass one and reset the rest.
   - The player is **prompted to choose** which card to pass. *(Assumed: if they don't choose before the hold timer runs out, the server passes the odd-one-out card as in section 2.)*
 - If the partner's proclamation is processed **before** the suspicion, the team wins and the suspicion no longer matters.
@@ -114,11 +115,6 @@ Anything not marked is Decided.
 
 ## Known risks (not rules)
 
-- **Pool exhaustion (decision needed):** a reset returns the caught player's cards and deals one of each type, but only the pool supplies cards, and passing never draws from it. In the engine's simulation of resets in a single round (the caught player holds four of one type, built by trading with other players):
-  - 2 and 3 teams with 11 per type: no shortfalls in 3 resets.
-  - 4 teams: the third reset is short of a type about 38% of the time.
-  - **5 teams: the first reset is short about 76% of the time, and the second always is.** The fallback hand (see below) then holds 3 or more of a kind about 62% of the time, so a reset can *help* the player.
-  - Giving the deck `players + 7` cards per type (17 for 5 teams) removed every shortfall through 5 resets in the same simulation. A bigger deck changes nothing except resets.
-  - *(Assumed fallback until decided: if the pool can't supply a type, the engine fills that slot with whatever the pool has, so the hand is still 4 cards, and the reset event reports which types were short.)*
+- **Pool exhaustion (resolved):** with the old 11 cards per type, 5-team games ran short of a type on about 76% of first resets, which would have forced hands that weren't one of each. The deck is now players + 7 per type. In the engine's simulation (a caught player holding four of one type, built by trading with other players), that removed every shortfall through 5 resets in a round.
 - **Latency:** the ordered queue favours players with better connections, which is why the collection window exists.
 - **Spectator card view:** a spectator who can see every hand can relay it to a friend in the game (voice call, another chat). Keep this behind a single config flag, and make the hidden-information filter role-aware (player vs spectator), so removing the perk is a one-line change.

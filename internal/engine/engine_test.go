@@ -14,10 +14,10 @@ func TestNewValidation(t *testing.T) {
 		"too few players":    {DefaultConfig(), good[:2]},
 		"odd players":        {DefaultConfig(), good[:3]},
 		"too many players":   {DefaultConfig(), testSpecs(6)},
-		"deck too small":     {Config{CopiesPerType: 4, SuspicionPoints: 3, WinsToFinish: 7}, good},
+		"no spare copies":    {Config{SpareCopies: 0, SuspicionPoints: 3, WinsToFinish: 7}, good},
 		"duplicate id":       {DefaultConfig(), []PlayerSpec{{"x", 0}, {"x", 0}, {"y", 1}, {"z", 1}}},
 		"unbalanced teams":   {DefaultConfig(), []PlayerSpec{{"a", 0}, {"b", 0}, {"c", 0}, {"d", 1}}},
-		"too many win steps": {Config{CopiesPerType: 11, SuspicionPoints: 3, WinsToFinish: 8}, good},
+		"too many win steps": {Config{SpareCopies: 7, SuspicionPoints: 3, WinsToFinish: 8}, good},
 	}
 	for name, c := range cases {
 		if _, err := New(c.cfg, c.specs, testRNG(1)); err == nil {
@@ -587,5 +587,70 @@ func TestRemoveTeamClearsPromptsOwedByTheLeavers(t *testing.T) {
 	mustApply(t, s, RemoveTeam{Team: s.players[target].team})
 	if len(s.pendingReveals) != 0 {
 		t.Error("pending reveal should have been cleared")
+	}
+}
+
+func TestDeckSizeFollowsThePlayerCount(t *testing.T) {
+	for teams := 2; teams <= 5; teams++ {
+		s := newGame(t, teams, 30)
+		if want := 2*teams + 7; s.copies != want {
+			t.Errorf("%d teams: %d cards per type, want %d", teams, s.copies, want)
+		}
+	}
+}
+
+// A reset always deals exactly one of each type, even if the pool has to be
+// topped up.
+func TestResetAlwaysDealsOneOfEachType(t *testing.T) {
+	s := started(t, 2, 31)
+	r := rolesOf(s)
+	setHand(t, s, r.holderPartner, Hand{4, 0, 0, 0})
+
+	// Drain every triangle from the pool into other players' hands by swapping,
+	// so card totals per player don't change.
+	for _, id := range s.Seats() {
+		if id == r.holderPartner {
+			continue
+		}
+		p := s.players[id]
+		for ty := range p.hand {
+			for CardType(ty) != Triangle && p.hand[ty] > 0 && s.pool[Triangle] > 0 {
+				p.hand[ty]--
+				s.pool[ty]++
+				p.hand[Triangle]++
+				s.pool[Triangle]--
+			}
+		}
+	}
+	if s.pool[Triangle] != 0 {
+		t.Fatalf("could not drain the pool: %d triangles left", s.pool[Triangle])
+	}
+	if err := s.CheckInvariants(); err != nil {
+		t.Fatal(err)
+	}
+
+	evs := mustApply(t, s, Suspect{By: r.o1, Target: r.holderPartner})
+	if h := s.Hand(r.holderPartner); h != (Hand{1, 1, 1, 1}) {
+		t.Errorf("reset hand = %v, want one of each", h)
+	}
+	if pr, _ := find[PlayerReset](evs); !slices.Equal(pr.Minted, []CardType{Triangle}) {
+		t.Errorf("minted = %v, want [triangle]", pr.Minted)
+	}
+}
+
+func TestResetNormallyMintsNothing(t *testing.T) {
+	s := started(t, 5, 32)
+	r := rolesOf4(s)
+	setHand(t, s, r.partner, Hand{4, 0, 0, 0})
+	var by PlayerID
+	for _, id := range s.Seats() {
+		if id != r.partner {
+			by = id
+			break
+		}
+	}
+	evs := mustApply(t, s, Suspect{By: by, Target: r.partner})
+	if pr, _ := find[PlayerReset](evs); len(pr.Minted) != 0 {
+		t.Errorf("minted %v with a full-size deck", pr.Minted)
 	}
 }

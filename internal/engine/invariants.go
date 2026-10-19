@@ -8,14 +8,15 @@ import (
 // CheckInvariants returns an error describing the first broken invariant, or
 // nil. It is for tests and debugging; the engine never needs it to run.
 func (s *State) CheckInvariants() error {
-	// Cards are conserved: for each type, hands plus pool equal the deck.
+	// Cards are conserved: for each type, hands plus pool equal the deck plus
+	// anything minted this round.
 	for t := 0; t < NumTypes; t++ {
 		sum := s.pool[t]
 		for _, p := range s.players {
 			sum += p.hand[t]
 		}
-		if sum != s.cfg.CopiesPerType {
-			return fmt.Errorf("type %v: %d cards in play, want %d", CardType(t), sum, s.cfg.CopiesPerType)
+		if want := s.copies + s.minted[t]; sum != want {
+			return fmt.Errorf("type %v: %d cards in play, want %d", CardType(t), sum, want)
 		}
 		if s.pool[t] < 0 {
 			return fmt.Errorf("type %v: negative pool %d", CardType(t), s.pool[t])

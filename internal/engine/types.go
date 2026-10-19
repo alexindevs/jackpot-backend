@@ -94,14 +94,18 @@ const (
 
 // Config holds the tunable numbers.
 type Config struct {
-	CopiesPerType   int // cards of each type in the deck
+	// SpareCopies is how many cards of each type the deck holds beyond one per
+	// player. The deck has players+SpareCopies of each type. Passing never
+	// draws from the pool, so the spares only matter for resets. One is the
+	// minimum (the extra passing card).
+	SpareCopies     int
 	SuspicionPoints int // per player, refreshed every round
 	WinsToFinish    int // round wins that end the game (J-A-C-K-P-O-T)
 }
 
 // DefaultConfig matches docs/rules.md.
 func DefaultConfig() Config {
-	return Config{CopiesPerType: 11, SuspicionPoints: 3, WinsToFinish: 7}
+	return Config{SpareCopies: 7, SuspicionPoints: 3, WinsToFinish: 7}
 }
 
 // Letters is what round wins spell.

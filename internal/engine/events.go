@@ -57,11 +57,11 @@ type SuspicionFailed struct {
 type ForcedPassRequested struct{ Player PlayerID }
 
 // PlayerReset means the player's cards went back to the pool and they were
-// dealt a fresh hand. ShortOf lists types the pool could not supply (it ran
-// dry); those slots were filled with other types.
+// dealt a fresh hand of one card of each type. Minted lists types the pool
+// could not supply, whose card was created instead (normally empty).
 type PlayerReset struct {
-	Player  PlayerID
-	ShortOf []CardType
+	Player PlayerID
+	Minted []CardType
 }
 
 // FalseProclaim is a proclamation whose partner did not hold four of a kind.
