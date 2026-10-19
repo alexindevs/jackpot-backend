@@ -102,6 +102,14 @@ Authorization: Bearer <start.ng game session>
 
 It returns the lines numbered above `after` (see `docs/api.md`). Stop polling when the socket is back: the `snapshot` it sends on reconnect already includes the recent chat. Polling works for the players of the game; spectators get the chat over the socket only.
 
+## What a client should do on a bad connection
+
+1. **Watchdog.** The server sends a `heartbeat` every 20 seconds. If nothing at all arrives for about 50 seconds, close the socket and reconnect.
+2. **Reconnect with backoff and jitter.** Wait about 1s, then 2s, 4s and so on up to ~30s, each time a random amount between half and the full delay, so a server restart doesn't get every client at once. Reset the delay after a connection has stayed up for ~30s.
+3. **Refresh the start.ng session before reconnecting.** Sessions last about 2 hours, so a long game can outlive the token. Fetch a fresh one, then send `auth` with it. Close code 4401 means the token was refused.
+4. **Retry with the same `key`.** Give each logical action a random `key` and reuse it if you send the action again after a drop.
+5. **Catch up.** Note the last `s` you saw. After the `snapshot`, send `resume` with it (see above). Close code 4409 means another tab took over: don't reconnect on your own.
+
 ## Values and types
 
 - **Ids are strings.** A player's id is start.ng's numeric id written as text (start.ng's `217` is `"217"` on this socket and in the API). Compare them as strings.
