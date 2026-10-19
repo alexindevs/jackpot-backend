@@ -38,6 +38,9 @@ func (m *Manager) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if m.cfg.OnSignIn != nil {
+		m.cfg.OnSignIn(c.ident)
+	}
 	m.register(c)
 	go c.writeLoop(ctx)
 	c.enqueue(m.hello(c))

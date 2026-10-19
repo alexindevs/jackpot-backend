@@ -28,6 +28,10 @@ type Config struct {
 	OriginPatterns []string      // hosts allowed to open a socket, e.g. "jackpot.start.ng"
 	Now            func() time.Time
 
+	// OnSignIn, if set, is told about every successful sign-in so player
+	// names and looks can be saved. It must not block.
+	OnSignIn func(Identity)
+
 	AuthTimeout  time.Duration // how long a new socket has to authenticate
 	SendQueue    int           // per-connection outgoing queue; a full queue drops the connection
 	MaxReadBytes int64

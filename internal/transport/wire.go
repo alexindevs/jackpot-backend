@@ -15,16 +15,13 @@
 package transport
 
 import (
-	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
-	"unicode"
 
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/room"
+	"github.com/alexindevs/jackpot-backend/internal/wirejson"
 )
 
 // inbound is any message from a client.
@@ -117,7 +114,7 @@ type outbound struct {
 }
 
 func encode(o outbound) []byte {
-	o.D = wire(o.D)
+	o.D = wirejson.Convert(o.D)
 	b, err := json.Marshal(o)
 	if err != nil {
 		// Only a bug in a message type can get here. Say so, don't crash.
@@ -129,109 +126,9 @@ func encode(o outbound) []byte {
 // encodeRoom turns a room message into its wire form.
 func encodeRoom(m room.Message) []byte {
 	if ge, ok := m.(room.GameEvent); ok {
-		return encode(outbound{T: "game_event", Kind: snake(typeName(ge.Event)), D: ge.Event})
+		return encode(outbound{T: "game_event", Kind: wirejson.Snake(wirejson.TypeName(ge.Event)), D: ge.Event})
 	}
-	return encode(outbound{T: snake(typeName(m)), D: m})
-}
-
-var (
-	jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
-	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
-)
-
-// wire converts a message into plain JSON-ready data with camelCase field
-// names ("PointsLeft" becomes "pointsLeft", "ID" becomes "id"). Map keys, such
-// as player ids, are left exactly as they are. Types that know how to marshal
-// themselves (times, phases, raw JSON) are passed through.
-func wire(v any) any { return wireValue(reflect.ValueOf(v)) }
-
-func wireValue(v reflect.Value) any {
-	if !v.IsValid() {
-		return nil
-	}
-	if t := v.Type(); t.Implements(jsonMarshalerType) || t.Implements(textMarshalerType) {
-		if v.Kind() == reflect.Pointer && v.IsNil() {
-			return nil
-		}
-		return v.Interface()
-	}
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface:
-		if v.IsNil() {
-			return nil
-		}
-		return wireValue(v.Elem())
-	case reflect.Struct:
-		out := map[string]any{}
-		t := v.Type()
-		for i := 0; i < t.NumField(); i++ {
-			if f := t.Field(i); f.IsExported() {
-				out[lowerFirst(f.Name)] = wireValue(v.Field(i))
-			}
-		}
-		return out
-	case reflect.Slice:
-		if v.IsNil() {
-			return nil
-		}
-		fallthrough
-	case reflect.Array:
-		out := make([]any, v.Len())
-		for i := range out {
-			out[i] = wireValue(v.Index(i))
-		}
-		return out
-	case reflect.Map:
-		if v.IsNil() {
-			return nil
-		}
-		out := make(map[string]any, v.Len())
-		for it := v.MapRange(); it.Next(); {
-			out[fmt.Sprint(it.Key().Interface())] = wireValue(it.Value())
-		}
-		return out
-	}
-	return v.Interface()
-}
-
-// lowerFirst lowercases the leading capitals of a Go name: "PointsLeft" to
-// "pointsLeft", "ID" to "id", "HTTPServer" to "httpServer".
-func lowerFirst(s string) string {
-	r := []rune(s)
-	n := 0
-	for n < len(r) && unicode.IsUpper(r[n]) {
-		n++
-	}
-	if n > 1 && n < len(r) {
-		n-- // keep the capital that starts the next word
-	}
-	for i := 0; i < n; i++ {
-		r[i] = unicode.ToLower(r[i])
-	}
-	return string(r)
-}
-
-func typeName(v any) string {
-	t := reflect.TypeOf(v)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	return t.Name()
-}
-
-// snake turns "MemberJoined" into "member_joined".
-func snake(s string) string {
-	var b strings.Builder
-	for i, r := range s {
-		if unicode.IsUpper(r) {
-			if i > 0 {
-				b.WriteByte('_')
-			}
-			r = unicode.ToLower(r)
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return encode(outbound{T: wirejson.Snake(wirejson.TypeName(m)), D: m})
 }
 
 type errorBody struct {

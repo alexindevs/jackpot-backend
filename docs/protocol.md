@@ -2,7 +2,7 @@
 
 The server speaks JSON over one WebSocket at `/ws`. It listens on plain `ws://`; put a reverse proxy in front for TLS, because a page served over https needs `wss://`.
 
-Field names are camelCase. Card types are numbers: `0` circle, `1` triangle, `2` cross, `3` square. A card the recipient may not see is `255`.
+Field names are camelCase. Lists are always arrays, never `null`. Card types are numbers: `0` circle, `1` triangle, `2` cross, `3` square. A card the recipient may not see is `255`.
 
 ## Connecting
 

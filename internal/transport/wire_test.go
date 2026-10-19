@@ -12,6 +12,7 @@ import (
 
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/room"
+	"github.com/alexindevs/jackpot-backend/internal/wirejson"
 )
 
 func TestFieldNamesAreCamelCase(t *testing.T) {
@@ -19,12 +20,12 @@ func TestFieldNamesAreCamelCase(t *testing.T) {
 		"PointsLeft": "pointsLeft", "ID": "id", "Hand": "hand", "EndsAt": "endsAt",
 		"HTTPServer": "httpServer", "A": "a", "YourHand": "yourHand",
 	} {
-		if got := lowerFirst(in); got != want {
+		if got := wirejson.LowerFirst(in); got != want {
 			t.Errorf("lowerFirst(%q) = %q, want %q", in, got, want)
 		}
 	}
 	for in, want := range map[string]string{"MemberJoined": "member_joined", "Passed": "passed", "RoundWon": "round_won"} {
-		if got := snake(in); got != want {
+		if got := wirejson.Snake(in); got != want {
 			t.Errorf("snake(%q) = %q, want %q", in, got, want)
 		}
 	}
@@ -123,7 +124,7 @@ func TestClientMessagesBecomeRoomInputs(t *testing.T) {
 func equalInput(a, b room.Input) bool {
 	ja, _ := json.Marshal(a)
 	jb, _ := json.Marshal(b)
-	return string(ja) == string(jb) && typeName(a) == typeName(b)
+	return string(ja) == string(jb) && wirejson.TypeName(a) == wirejson.TypeName(b)
 }
 
 func TestTheSenderIsNeverTakenFromTheMessage(t *testing.T) {

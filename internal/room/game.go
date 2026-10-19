@@ -78,7 +78,7 @@ func (r *Room) teamChat(from engine.PlayerID, text string) error {
 func (r *Room) startRound(now time.Time) {
 	r.dl.clear(dkey{kind: dkChat})
 	if err := r.apply(now, engine.StartRound{}); err != nil {
-		r.close("could not start the round")
+		r.close(now, "could not start the round")
 		return
 	}
 	r.phase = PhasePlaying
@@ -112,6 +112,13 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 	}
 	for _, ev := range evs {
 		r.deliver(ev)
+		switch e := ev.(type) {
+		case engine.RoundWon:
+			r.record(RoundWon{Room: r.id, At: now, Round: r.game.Round(), Team: e.Team, Proclaimer: e.Proclaimer, Holder: e.Holder})
+		case engine.GameOver:
+			res := e.Result
+			r.record(GameFinished{Room: r.id, At: now, Result: &res})
+		}
 		if rm, ok := ev.(engine.TeamRemoved); ok {
 			for _, id := range rm.Members {
 				if m := r.members[id]; m != nil {

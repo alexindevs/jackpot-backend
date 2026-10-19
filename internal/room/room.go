@@ -62,6 +62,10 @@ type Config struct {
 
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
 	SpectatorsSeeCards bool
+
+	// OnRecord, if set, is told about games starting, rounds being won and
+	// games ending. It runs on the room's goroutine and must not block.
+	OnRecord func(Record)
 }
 
 func DefaultConfig() Config {
@@ -528,15 +532,19 @@ func (r *Room) startGame(now time.Time) {
 	}
 	g, err := engine.New(r.cfg.Engine, specs, rand.New(rand.NewPCG(r.rng.Uint64(), r.rng.Uint64())))
 	if err != nil {
-		r.close("could not start the game")
+		r.close(now, "could not start the game")
 		return
 	}
 	r.game = g
+	r.record(GameStarted{Room: r.id, At: now, Teams: slices.Clone(pairs)})
 	r.broadcast(GameStarting{Teams: pairs, Demoted: demoted})
 	r.startChat(now)
 }
 
-func (r *Room) close(reason string) {
+func (r *Room) close(at time.Time, reason string) {
+	if r.game != nil && r.phase != PhaseOver && r.phase != PhaseClosed {
+		r.record(GameFinished{Room: r.id, At: at, Abandoned: true})
+	}
 	r.phase = PhaseClosed
 	r.dl = newDeadlines()
 	r.holdFor = ""
@@ -579,6 +587,6 @@ func (r *Room) fire(k dkey, at time.Time) {
 	case dkReconnect:
 		r.reconnectExpired(at, k.player)
 	case dkEmpty:
-		r.close("empty")
+		r.close(at, "empty")
 	}
 }

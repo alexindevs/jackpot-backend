@@ -1,0 +1,45 @@
+# Postgres for Jackpot, and optionally the server itself.
+#
+#   cp .env.example .env        then set POSTGRES_PASSWORD
+#   docker compose up -d        starts Postgres only
+#   docker compose --profile app up -d --build     starts Postgres and the server
+#
+# Postgres listens on 127.0.0.1 only. Data lives in the `pgdata` volume, so
+# `docker compose down` keeps it and `docker compose down -v` deletes it.
+name: jackpot
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jackpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env and set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-jackpot}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    profiles: ["app"]
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-jackpot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-jackpot}?sslmode=disable
+      JACKPOT_ADDR: ":8080"
+      JACKPOT_GAME: ${JACKPOT_GAME:-jackpot}
+      JACKPOT_ORIGINS: ${JACKPOT_ORIGINS:-jackpot.start.ng}
+    ports:
+      - "127.0.0.1:${JACKPOT_PORT:-8080}:8080"
+
+volumes:
+  pgdata:
