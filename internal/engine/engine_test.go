@@ -654,3 +654,24 @@ func TestResetNormallyMintsNothing(t *testing.T) {
 		t.Errorf("minted %v with a full-size deck", pr.Minted)
 	}
 }
+
+func TestAccessorsForTheRoomLayer(t *testing.T) {
+	s := started(t, 2, 33)
+	r := rolesOf(s)
+	if !s.CanProclaim(r.o1) || s.CanProclaim("ghost") {
+		t.Error("CanProclaim")
+	}
+	if s.ForcedPassPlayer() != "" || len(s.PendingReveals()) != 0 {
+		t.Error("nothing should be pending yet")
+	}
+	mustApply(t, s, Suspect{By: r.o1, Target: r.o2})
+	mustApply(t, s, Suspect{By: r.o1, Target: r.holderPartner})
+	got := s.PendingReveals()
+	if len(got) != 2 || got[0] > got[1] {
+		t.Errorf("PendingReveals = %v, want two, sorted", got)
+	}
+	s.players[r.o1].canProclaim = false
+	if s.CanProclaim(r.o1) {
+		t.Error("revoked right should show")
+	}
+}

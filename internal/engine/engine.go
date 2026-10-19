@@ -115,6 +115,25 @@ func (s *State) Result() *Result        { return s.result }
 func (s *State) Hand(id PlayerID) Hand  { return s.players[id].hand }
 func (s *State) Points(id PlayerID) int { return s.players[id].points }
 
+// PendingReveals lists players who still owe a reveal, in ID order.
+func (s *State) PendingReveals() []PlayerID {
+	ids := make([]PlayerID, 0, len(s.pendingReveals))
+	for id := range s.pendingReveals {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
+// ForcedPassPlayer is the caught holder who must pass before resetting, or "".
+func (s *State) ForcedPassPlayer() PlayerID { return s.forcedPass }
+
+// CanProclaim reports whether the player may currently proclaim.
+func (s *State) CanProclaim(id PlayerID) bool {
+	p, ok := s.players[id]
+	return ok && p.active && p.canProclaim
+}
+
 // Apply runs one command. On error the state is unchanged.
 func (s *State) Apply(cmd Command) ([]Event, error) {
 	if s.phase == PhaseOver {

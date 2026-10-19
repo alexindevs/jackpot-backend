@@ -18,6 +18,7 @@ Anything not marked is Decided.
 - Copies per type: **players + 7** (11 for 2 teams, 17 for 5 teams). Cards not dealt form the **pool**. Passing never draws from the pool, so the spares only matter for resets.
 - **Only signed-in start.ng players can play.** Guests can't.
 - Before **every round**, each team gets a **private chat for 2 minutes** to agree a signalling code. Teams are expected to use a fresh code each round, since reusing signals lets opponents learn them. This is strategy advice, not an enforced rule.
+- Players can click **Ready** to skip the rest of the chat, but **everyone** has to click it. If anyone hasn't, everyone waits out the 2 minutes.
 - This is the **only** private channel. Once the round starts, partners can only coordinate through signals (section 5) or the public chat (section 10).
 
 ## 2. Passing
@@ -52,12 +53,12 @@ Anything not marked is Decided.
   - A 5-card hand with 3+2 has only 2 types, so it fails. This is intended.
 - Shown cards are **revealed to the room**. Leaking hand info is part of the game.
 - When a player fails the check, the room sees the hand they were holding.
-- *(Assumed: the suspected player chooses which cards to show, with a server-side check and a timeout fallback.)*
+- The suspected player chooses which cards to show, within **30 seconds**. *(Assumed: if they don't, the server picks a valid set at random.)*
 - If they can't show enough different types, they **reset**:
   - Their cards go back to the pool and they get a fresh hand of **exactly one card of each type**, always.
   - *(Assumed: if the pool ever lacks a type, that card is created, so the rule never bends. The deck is rebuilt every round, so this never carries over. With players + 7 per type it didn't happen through 5 resets in a round in simulation.)*
   - If they hold the passing card, they **pass it to the next player first, then reset**. With 5 cards of one type, they pass one and reset the rest.
-  - The player is **prompted to choose** which card to pass. *(Assumed: if they don't choose before the hold timer runs out, the server passes the odd-one-out card as in section 2.)*
+  - The player is **prompted to choose** which card to pass, within **30 seconds**. If they don't, the server passes the odd-one-out card as in section 2.
 - If the partner's proclamation is processed **before** the suspicion, the team wins and the suspicion no longer matters.
 
 ## 5. Signalling
@@ -71,8 +72,8 @@ Anything not marked is Decided.
 
 ## 6. Concurrency
 
-- Each room has a **single ordered event queue**. Whichever event the server processes first wins. This replaces the in-person vote.
-- A short **collection window** of roughly 100 to 200 ms, with a **random tie-break** for near-simultaneous events. This is a tunable starting value, not a final one.
+- Each room has a **single ordered event queue**. Whichever event the server receives first wins. This replaces the in-person vote.
+- Order is **arrival order** at the server. There is no collection window and no random tie-break. Only contested actions (suspicions and proclamations) are ever close enough to matter.
 
 ## 7. Ending the game
 
@@ -85,7 +86,8 @@ Anything not marked is Decided.
 - A team can drop out at any time. After a **1 minute timeout**, if the leaving player holds the passing card it's passed on, and the **whole team is removed** (both partners). Their cards go **back to the pool**. The remaining teams continue.
 - If only **one team is left, it wins by forfeit**. A game needs at least 2 teams.
 - A player who **disconnects** gets a **90 second reconnect window**. If they haven't reconnected by then, their team is removed as above.
-- **Open:** whether a deliberate drop-out removes the team immediately, or waits out a timer too.
+- A **deliberate** drop-out removes the team **immediately**.
+- If **nobody** is connected for **1 minute**, the room closes.
 - A forfeit win **does not count** toward leaderboard or duo stats.
 
 ## 9. Stats and leaderboards
@@ -111,10 +113,22 @@ Anything not marked is Decided.
 - **Temporary perk:** spectators can **view every player's cards**. This is expected to be removed once people start abusing it.
 - **Open:** whether removed players also see everyone's cards, or only the chat.
 
+## 12. Rooms and lobby
+
+- A player can **view running rooms** to spectate, **create** a room and invite people to play, **invite a specific person to be their partner**, or **join** a room and invite a partner (or anyone else).
+- **4 players** are needed to start. The room **stops accepting joiners at 10** (enough for 5 teams).
+- A **2 minute countdown** starts when 4 players have joined. This is separate from the pre-round chat. When it ends, the game starts.
+- Anyone who hasn't picked a partner by then is **randomly paired with another free player**.
+- Only signed-in start.ng players can join as players.
+- *(Assumed: the countdown cancels if the room drops below 4 players, and starts again from a full 2 minutes at 4. A full room still waits out the countdown.)*
+- *(Assumed: if one free player is left over without a partner, they become a spectator.)*
+- *(Assumed: accepting a partner invite also joins you to the room. Leaving the lobby frees your partner. A lobby player who disconnects gets the same 90 second window, then is removed.)*
+- **Open:** how a player finds or is told about invitations when they aren't in the room; the list of running rooms and who may see it.
+
 ---
 
 ## Known risks (not rules)
 
 - **Pool exhaustion (resolved):** with the old 11 cards per type, 5-team games ran short of a type on about 76% of first resets, which would have forced hands that weren't one of each. The deck is now players + 7 per type. In the engine's simulation (a caught player holding four of one type, built by trading with other players), that removed every shortfall through 5 resets in a round.
-- **Latency:** the ordered queue favours players with better connections, which is why the collection window exists.
+- **Latency:** arrival order favours players with better connections. Accepted for now.
 - **Spectator card view:** a spectator who can see every hand can relay it to a friend in the game (voice call, another chat). Keep this behind a single config flag, and make the hidden-information filter role-aware (player vs spectator), so removing the perk is a one-line change.

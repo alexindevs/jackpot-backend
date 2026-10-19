@@ -5,9 +5,16 @@ Decisions are the author's. Anything marked **unverified** is an inference from 
 ## Layers
 
 1. **Engine** (`internal/engine`, built): a pure state machine. Commands in, events out. No I/O, no timers, deterministic given a seeded RNG. Covered by unit tests and a randomized test that plays hundreds of games and checks card conservation after every command.
-2. **Room runner** (next): one goroutine per room owns the engine state and reads one ordered command queue. It owns every timer: hold timer (60 s), prompt timeouts, the 90 s reconnect window, the 2 minute pre-round chat, and the 100 to 200 ms collection window with a random tie-break.
-3. **Transport**: WebSockets. Hidden information is filtered per role (player, spectator) before anything leaves the server. For example, only the receiver of a pass sees the card type.
+2. **Room** (`internal/room`, built): everything that happens over time around the engine. It has no goroutines or clock of its own. You give it inputs with a timestamp (`Handle`), tell it time has passed (`Tick`), and ask when it next needs attention (`NextDeadline`); each call returns the messages to send. That makes every timer testable without sleeping. It covers the lobby (joining, partner invites, the 2 minute countdown, random pairing), the pre-round chat with the Ready button, the hold timer (60 s), the reveal and forced-pass prompts (30 s), the 90 s reconnect window, instant drop-outs, the 1 minute empty-room close, per-recipient hiding of private information, and snapshots for reconnecting players. A thin `Runner` drives one room from a single goroutine with real time; inputs are handled strictly in arrival order, so there is no collection window.
+3. **Transport** (not built): WebSockets. The room already decides who may see what; the transport only authenticates, maps socket messages to room inputs, and delivers outputs.
 4. **Persistence**: Postgres.
+
+## Not built yet
+
+- Signals (the gesture vocabulary and the 20% partner-only roll) and the public chat with its 24 hour storage.
+- A room manager: creating rooms, listing running rooms, and making sure a player is in only one.
+- The WebSocket transport and start.ng auth.
+- Persistence and leaderboards.
 
 ## Language and storage
 
