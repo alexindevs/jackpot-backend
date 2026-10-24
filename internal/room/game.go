@@ -223,6 +223,7 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 		r.dl.clearKind(dkHold)
 		r.dl.clearKind(dkReveal)
 		r.dl.clearKind(dkForced)
+		r.dl.clearKind(dkProclaim)
 		r.holdFor = ""
 		switch r.phase {
 		case PhasePlaying: // a round was just won
@@ -254,6 +255,18 @@ func (r *Room) syncTimers(now time.Time) {
 			r.dl.clearKind(dkHold)
 			r.holdFor = holder
 			r.startTimer(dkHold, holder, now.Add(r.cfg.HoldTimer))
+		}
+	}
+
+	// Whoever the engine says is locked out of proclaiming has a lockout
+	// timer, started fresh if the game was paused meanwhile.
+	for _, id := range r.order {
+		revoked := g.ProclaimRevoked(id)
+		switch has := r.dl.has(dkey{dkProclaim, id}); {
+		case revoked && !has:
+			r.startTimer(dkProclaim, id, now.Add(r.cfg.ProclaimLockout))
+		case !revoked && has:
+			r.dl.clear(dkey{dkProclaim, id})
 		}
 	}
 

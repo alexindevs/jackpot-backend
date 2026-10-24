@@ -36,7 +36,7 @@ Anything not marked is Decided.
 - Your **partner** proclaims "Jackpot". You can never proclaim for yourself.
 - A proclamation is **rejected, with no penalty**, while the player who would win (the proclaimer's partner) holds the passing card (has 5 cards).
 - At any other time a proclamation is accepted. If it's **false** (the proclaimer's partner doesn't hold 4 of a kind), the proclaimer **loses one suspicion point**.
-- A false proclamation made at **0 points** removes the proclaimer's right to proclaim **for the rest of that round**. The right comes back next round.
+- A false proclamation made at **0 points** locks the proclaimer out of proclaiming for **3 minutes** (`ProclaimLockout`). Their suspicion points are not refilled meanwhile; only the right to proclaim comes back, when the 3 minutes are up or at the next round, whichever is first. A paused game starts the 3 minutes again when it resumes.
 - A winning team earns the next letter of J-A-C-K-P-O-T (one round win = one letter).
 - A new round **redeals**, and **suspicion points refresh**. Each round begins with the 2-minute private team chat (see section 1).
 - The player who starts with the extra (passing) card is **picked at random** each round. Seating is not reshuffled between rounds, except as described in section 2.

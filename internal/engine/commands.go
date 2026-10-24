@@ -34,6 +34,10 @@ type AutoReveal struct{ Player PlayerID }
 // Proclaim is By calling "Jackpot" for their partner.
 type Proclaim struct{ By PlayerID }
 
+// RestoreProclaim is the server giving Player their right to proclaim back
+// once the lockout from a false proclamation at 0 points has run out.
+type RestoreProclaim struct{ Player PlayerID }
+
 // RemoveTeam removes a team (drop-out, or the reconnect window ran out).
 type RemoveTeam struct{ Team TeamID }
 
@@ -43,12 +47,13 @@ type VoteEnd struct {
 	Agree  bool
 }
 
-func (StartRound) isCommand() {}
-func (Pass) isCommand()       {}
-func (AutoPass) isCommand()   {}
-func (Suspect) isCommand()    {}
-func (Reveal) isCommand()     {}
-func (AutoReveal) isCommand() {}
-func (Proclaim) isCommand()   {}
-func (RemoveTeam) isCommand() {}
-func (VoteEnd) isCommand()    {}
+func (StartRound) isCommand()      {}
+func (Pass) isCommand()            {}
+func (AutoPass) isCommand()        {}
+func (Suspect) isCommand()         {}
+func (Reveal) isCommand()          {}
+func (AutoReveal) isCommand()      {}
+func (Proclaim) isCommand()        {}
+func (RestoreProclaim) isCommand() {}
+func (RemoveTeam) isCommand()      {}
+func (VoteEnd) isCommand()         {}

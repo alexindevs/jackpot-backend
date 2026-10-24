@@ -33,15 +33,15 @@ Status markers:
 | U4 | **Signals visible in the team chat** (Rafe), because a new player knows none of them. | Open | frontend (and maybe backend, if the signals sent should be echoed into the team chat log) |
 | U5 | **Public chat in the lobby** (Tobe). Today there is none: public chat opens when the game starts. | Open. A rule change: see rules.md section 10. | both |
 | U6 | **More immersion** (Rafe): cards visibly moving, seeing your own card. Reference: the iOS Uno game. | Idea | frontend |
-| U7 | **Shorten the card-pass time** (Tobe). The hold timer is 60 seconds (`HoldTimer`), a backend setting. | Open | backend (one config value) |
+| U7 | **Shorten the card-pass time** (Tobe). The hold timer is 60 seconds (`HoldTimer`), a backend setting. | **Decided**: keep the 60 second hold timer. No change. | none |
 
 ## Game design
 
 | # | Item | Status | Where |
 | --- | --- | --- | --- |
 | G1 | **7 rounds is too long.** Kiane voted for 4; Onyeka voted for optional; both were floated. | **Decided**; backend built (not committed), frontend not built. The room's creator picks a long game (7 wins, the default) or a short one (4 wins, spelling J-A-C-K) when opening the room: `create_room` takes `short`. The room list, the snapshot and `game_starting.winsToFinish` all carry the length. | backend (done); frontend (a length choice when creating a room, show it in the room list and lobby, and draw the scoreboard from `winsToFinish` instead of seven fixed letters) |
-| G2 | **Suspect points: 3 vs 5.** Tobe only had 3 and felt penalised. Raising to 5 was discussed. | Open | backend (`SuspicionPoints`, 3 today) |
-| G3 | **A cooldown that refills suspect and jackpot attempts.** Proposed: 5 minutes. Tobe thinks that is too much: about 1 minute, or 3. The chat ends with the poll "All in favor of 5 minutes?" and **no votes recorded**. | Open | backend (new rule: points refill over time instead of only per round); frontend (show the cooldown) |
+| G2 | **Suspect points: 3 vs 5.** Tobe only had 3 and felt penalised. Raising to 5 was discussed. | **Decided**: keep 3. No change. | none |
+| G3 | **A cooldown that refills suspect and jackpot attempts.** Proposed: 5 minutes. Tobe thinks that is too much: about 1 minute, or 3. The chat ends with the poll "All in favor of 5 minutes?" and **no votes recorded**. | **Decided** and built on the backend (not the cooldown that was first proposed). Points do not refill. Instead, a false Jackpot call made at 0 suspicion points locks that player out of calling for 3 minutes (`ProclaimLockout`), after which the right comes back. It used to last the rest of the round. The server sends a `timer_started` of kind `proclaim` when the lockout starts and a `proclaim_restored` event when it ends; it also ends at the next round. The poll in the chat recorded no votes, so this is the author's call. | backend (done); frontend (show the lockout countdown and say why Jackpot is disabled) |
 | G4 | **Mid-game joins.** People can join **between rounds**; catching up is their own responsibility. | Decided, not built. Today `join` is lobby-only; a started game offers Watch only. | backend (a join between rounds, which changes the ring seating and teams, so it needs thought) and frontend |
 | G5 | **Tournaments.** "Would be nice." | Idea | both |
 

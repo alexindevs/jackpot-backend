@@ -18,6 +18,7 @@ const (
 	dkReconnect                  // a disconnected player's window
 	dkEmpty                      // nobody is connected
 	dkPause                      // a paused game's time is up
+	dkProclaim                   // a player's lockout from proclaiming runs out
 )
 
 func (k dkind) label() string {
@@ -36,6 +37,8 @@ func (k dkind) label() string {
 		return "chat"
 	case dkPause:
 		return "pause"
+	case dkProclaim:
+		return "proclaim"
 	}
 	return "empty"
 }

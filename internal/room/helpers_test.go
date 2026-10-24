@@ -182,7 +182,7 @@ func (r *Room) checkInvariants() error {
 		if want := len(r.members) >= r.cfg.MinPlayers; want != r.dl.has(dkey{kind: dkCountdown}) {
 			return fmt.Errorf("%d members but countdown running = %v", len(r.members), !want)
 		}
-		for _, k := range []dkind{dkChat, dkHold, dkReveal, dkForced} {
+		for _, k := range []dkind{dkChat, dkHold, dkReveal, dkForced, dkProclaim} {
 			if has(k) != 0 || r.dl.has(dkey{kind: k}) {
 				return fmt.Errorf("lobby has a %s timer", k.label())
 			}
@@ -194,7 +194,7 @@ func (r *Room) checkInvariants() error {
 		if r.game.Phase() != engine.PhaseWaiting {
 			return fmt.Errorf("chat but engine is %v", r.game.Phase())
 		}
-		if has(dkHold)+has(dkReveal)+has(dkForced) != 0 {
+		if has(dkHold)+has(dkReveal)+has(dkForced)+has(dkProclaim) != 0 {
 			return fmt.Errorf("round timers during chat")
 		}
 	case PhasePlaying:
@@ -212,6 +212,11 @@ func (r *Room) checkInvariants() error {
 		} else if !r.dl.has(dkey{dkHold, r.game.Holder()}) || has(dkHold) != 1 || has(dkForced) != 0 {
 			return fmt.Errorf("holder %s needs exactly one hold timer", r.game.Holder())
 		}
+		for _, id := range r.order {
+			if r.game.ProclaimRevoked(id) != r.dl.has(dkey{dkProclaim, id}) {
+				return fmt.Errorf("%s: locked out = %v but lockout timer = %v", id, r.game.ProclaimRevoked(id), r.dl.has(dkey{dkProclaim, id}))
+			}
+		}
 		pending := r.game.PendingReveals()
 		got := r.dl.players(dkReveal)
 		if len(pending) != len(got) {
@@ -223,7 +228,7 @@ func (r *Room) checkInvariants() error {
 			}
 		}
 	case PhaseOver:
-		for _, k := range []dkind{dkChat, dkHold, dkReveal, dkForced, dkReconnect, dkCountdown} {
+		for _, k := range []dkind{dkChat, dkHold, dkReveal, dkForced, dkProclaim, dkReconnect, dkCountdown} {
 			if has(k) != 0 || r.dl.has(dkey{kind: k}) {
 				return fmt.Errorf("finished game still has a %s timer", k.label())
 			}

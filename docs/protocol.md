@@ -81,9 +81,9 @@ Invitations are only delivered to people who are connected at that moment. They 
 **Playing**
 
 - `hand_update {player,hand}`: your whole hand, sent when it changes. `hand` is four counts, one per card type.
-- `timer_started {kind,player,endsAt}`: `kind` is `hold`, `reveal`, `forced` or `reconnect`.
+- `timer_started {kind,player,endsAt}`: `kind` is `hold`, `reveal`, `forced`, `reconnect` or `proclaim`. A `proclaim` timer means `player` is locked out of proclaiming until `endsAt`.
 - `connection_changed {player,connected,reconnectBy}`.
-- `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
+- `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `proclaim_restored {player}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
 
 The card in a `passed` event is only real for the player who passed it and the player who received it; everyone else gets `255`.
 
@@ -144,7 +144,7 @@ It returns the lines numbered above `after` (see `docs/api.md`). Stop polling wh
 - `game_over {result}`: `result.winner` is a team id and means nothing when `result.draw` is true. `result.reason` is `wins`, `agreement` or `forfeit`. `result.wins` is a map from team id to count. `result.countsForStats` is false for a forfeit.
 - `suspicion_raised {by, target, pointsLeft, required}`: `pointsLeft` is the suspector's remaining points, and `required` is how many different types the target must show.
 - `passed {from, to, card, auto}`: `auto` is true when the server passed for a holder who ran out of time (or didn't answer a forced-pass prompt).
-- `false_proclaim {by, pointsLeft, revoked}`: `revoked` is true when `by` was at 0 points, which removes their right to proclaim until the next round.
+- `false_proclaim {by, pointsLeft, revoked}`: `revoked` is true when `by` was at 0 points, which locks them out of proclaiming for 3 minutes (a `timer_started` of kind `proclaim` follows; `proclaim_restored {player}` says the lockout is over). It also ends at the next round.
 - `player_reset {player, minted}`: after a reset the player's new hand is one of each type. `minted` is normally empty.
 - `hand_update` arrives for your own hand whenever it changes, including at the start of each round, after a pass you made or received, and after a reset. It is the source of truth for your hand.
 

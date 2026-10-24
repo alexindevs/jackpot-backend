@@ -72,6 +72,10 @@ type Config struct {
 	// Engine.WinsToFinish.
 	ShortWinsToFinish int
 
+	// ProclaimLockout is how long a player who makes a false proclamation at
+	// 0 suspicion points cannot proclaim. Points are not refilled meanwhile.
+	ProclaimLockout time.Duration
+
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
 	SpectatorsSeeCards bool
 
@@ -109,6 +113,7 @@ func DefaultConfig() Config {
 		PausedFor:          24 * time.Hour,
 		LobbyPausedFor:     time.Hour,
 		ShortWinsToFinish:  4,
+		ProclaimLockout:    3 * time.Minute,
 		SpectatorsSeeCards: true,
 		ChatRatePerSec:     1,
 		ChatBurst:          5,
@@ -751,6 +756,8 @@ func (r *Room) fire(k dkey, at time.Time) {
 		r.startGame(at)
 	case dkChat:
 		r.startRound(at)
+	case dkProclaim:
+		_ = r.apply(at, engine.RestoreProclaim{Player: k.player})
 	case dkHold, dkForced:
 		_ = r.apply(at, engine.AutoPass{Player: k.player})
 	case dkReveal:

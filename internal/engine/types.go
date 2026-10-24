@@ -143,5 +143,6 @@ var (
 	ErrNoPending               = errors.New("nothing to answer")
 	ErrBadReveal               = errors.New("invalid reveal")
 	ErrProclaimRevoked         = errors.New("player may no longer proclaim")
+	ErrNotRevoked              = errors.New("player's right to proclaim is not revoked")
 	ErrPartnerHoldsPassingCard = errors.New("cannot proclaim while your partner holds the passing card")
 )

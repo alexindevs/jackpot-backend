@@ -342,6 +342,33 @@ func TestFalseProclaimCostsAPointThenRevokes(t *testing.T) {
 	mustApply(t, s, Proclaim{By: r.o2})
 }
 
+func TestRestoreProclaimEndsTheLockout(t *testing.T) {
+	s := started(t, 2, 14)
+	r := rolesOf(s)
+	mustFail(t, s, RestoreProclaim{Player: r.o1}, ErrNotRevoked)
+
+	s.players[r.o1].points = 0
+	mustApply(t, s, Proclaim{By: r.o1}) // false, at 0 points: revoked
+	if !s.ProclaimRevoked(r.o1) {
+		t.Fatal("a false proclamation at 0 points should lock the player out")
+	}
+	if s.ProclaimRevoked(r.o2) {
+		t.Error("the partner is not locked out")
+	}
+
+	evs := mustApply(t, s, RestoreProclaim{Player: r.o1})
+	if e, ok := find[ProclaimRestored](evs); !ok || e.Player != r.o1 {
+		t.Errorf("events = %v", evs)
+	}
+	if s.ProclaimRevoked(r.o1) || !s.CanProclaim(r.o1) {
+		t.Error("the lockout should be over")
+	}
+	if s.players[r.o1].points != 0 {
+		t.Error("points are not refilled when the lockout ends")
+	}
+	mustFail(t, s, RestoreProclaim{Player: r.o1}, ErrNotRevoked)
+}
+
 // Whichever event the queue puts first wins.
 func TestSuspicionAndProclaimRace(t *testing.T) {
 	setup := func() (*State, roles) {

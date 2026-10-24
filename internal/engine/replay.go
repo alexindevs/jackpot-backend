@@ -89,6 +89,8 @@ func MarshalCommand(c Command) ([]byte, error) {
 		w.Kind, w.Player = "auto_reveal", v.Player
 	case Proclaim:
 		w.Kind, w.Player = "proclaim", v.By
+	case RestoreProclaim:
+		w.Kind, w.Player = "restore_proclaim", v.Player
 	case RemoveTeam:
 		w.Kind, w.Team = "remove_team", &v.Team
 	case VoteEnd:
@@ -129,6 +131,8 @@ func UnmarshalCommand(b []byte) (Command, error) {
 		return AutoReveal{Player: w.Player}, nil
 	case "proclaim":
 		return Proclaim{By: w.Player}, nil
+	case "restore_proclaim":
+		return RestoreProclaim{Player: w.Player}, nil
 	case "remove_team":
 		if err := need(w.Team != nil, "its team"); err != nil {
 			return nil, err

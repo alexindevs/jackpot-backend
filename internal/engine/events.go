@@ -71,6 +71,10 @@ type FalseProclaim struct {
 	Revoked    bool // By may no longer proclaim
 }
 
+// ProclaimRestored means the lockout from a false proclamation is over and
+// Player may proclaim again.
+type ProclaimRestored struct{ Player PlayerID }
+
 type RoundWon struct {
 	Team       TeamID
 	Proclaimer PlayerID
@@ -101,6 +105,7 @@ func (SuspicionFailed) isEvent()     {}
 func (ForcedPassRequested) isEvent() {}
 func (PlayerReset) isEvent()         {}
 func (FalseProclaim) isEvent()       {}
+func (ProclaimRestored) isEvent()    {}
 func (RoundWon) isEvent()            {}
 func (TeamRemoved) isEvent()         {}
 func (VoteChanged) isEvent()         {}

@@ -157,6 +157,8 @@ func (s *State) Apply(cmd Command) ([]Event, error) {
 		return s.autoReveal(c.Player)
 	case Proclaim:
 		return s.proclaim(c.By)
+	case RestoreProclaim:
+		return s.restoreProclaim(c.Player)
 	case RemoveTeam:
 		return s.removeTeam(c.Team)
 	case VoteEnd:
@@ -420,6 +422,28 @@ func (s *State) reset(id PlayerID) Event {
 }
 
 // --- proclaiming ---
+
+// ProclaimRevoked reports whether the player is in the game but locked out of
+// proclaiming by an earlier false proclamation at 0 points.
+func (s *State) ProclaimRevoked(id PlayerID) bool {
+	p, ok := s.players[id]
+	return ok && p.active && !p.canProclaim
+}
+
+func (s *State) restoreProclaim(id PlayerID) ([]Event, error) {
+	if s.phase != PhasePlaying {
+		return nil, ErrWrongPhase
+	}
+	p, err := s.activePlayer(id)
+	if err != nil {
+		return nil, err
+	}
+	if p.canProclaim {
+		return nil, ErrNotRevoked
+	}
+	p.canProclaim = true
+	return []Event{ProclaimRestored{Player: id}}, nil
+}
 
 func (s *State) proclaim(by PlayerID) ([]Event, error) {
 	if s.phase != PhasePlaying {
