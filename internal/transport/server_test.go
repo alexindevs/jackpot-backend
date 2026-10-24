@@ -271,7 +271,7 @@ func TestMalformedJSONIsAnError(t *testing.T) {
 }
 
 func TestAnEmptyRoomClosesAndFreesItsPlayers(t *testing.T) {
-	m, url := newTestServer(t, func(c *Config) { c.Room.EmptyRoomGrace = 100 * time.Millisecond })
+	m, url := newTestServer(t, func(c *Config) { c.Room.LobbyEmptyGrace = 100 * time.Millisecond })
 	a := dial(t, url, "alice")
 	a.wait("hello", isT("hello"))
 	a.request(msg{"type": "create_room"})

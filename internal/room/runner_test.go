@@ -99,7 +99,7 @@ func TestRunnerDrivesInputsAndRealTimers(t *testing.T) {
 
 func TestRunnerStopsWhenTheRoomCloses(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.EmptyRoomGrace = 30 * time.Millisecond
+	cfg.LobbyEmptyGrace = 30 * time.Millisecond
 	room, _ := New(cfg, "short", pid(0), rand.New(rand.NewPCG(3, 4)), time.Now())
 	rn := NewRunner(room, time.Now, func([]Out) {})
 	finished := make(chan struct{})

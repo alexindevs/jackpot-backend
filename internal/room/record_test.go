@@ -127,7 +127,7 @@ func TestLobbiesAndFinishedGamesProduceNoAbandonedRecord(t *testing.T) {
 	// A room that never became a game records nothing.
 	h, recs := recorded(t, DefaultConfig())
 	h.must(pid(0), Disconnect{})
-	h.advance(time.Minute)
+	h.advance(DefaultConfig().LobbyEmptyGrace)
 	if h.r.Phase() != PhaseClosed || len(*recs) != 0 {
 		t.Errorf("phase %v, records %v", h.r.Phase(), *recs)
 	}

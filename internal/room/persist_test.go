@@ -52,7 +52,7 @@ func TestALobbyIsReportedGoneWhenTheGameStartsOrTheRoomCloses(t *testing.T) {
 
 	h2, recs2 := recordedAll(t, DefaultConfig())
 	h2.must(pid(0), Disconnect{})
-	h2.advance(time.Minute)
+	h2.advance(DefaultConfig().LobbyEmptyGrace)
 	got = lobbyStates(recs2)
 	if last := got[len(got)-1]; !last.Gone || h2.r.Phase() != PhaseClosed {
 		t.Errorf("a closed lobby is gone: %+v", last)

@@ -121,9 +121,13 @@ func TestEveryoneGoneFromAGamePausesItAfterAMinute(t *testing.T) {
 	}
 }
 
-func TestAnEmptyLobbyStillClosesAfterAMinute(t *testing.T) {
+func TestAnEmptyLobbyClosesAfterTwentyMinutes(t *testing.T) {
 	h := newHarness(t, 45)
 	h.must(pid(0), Disconnect{})
+	h.advance(19 * time.Minute)
+	if h.r.Phase() != PhaseLobby {
+		t.Fatalf("a lobby should outlast a short absence, phase = %v", h.r.Phase())
+	}
 	h.advance(time.Minute)
 	if h.r.Phase() != PhaseClosed {
 		t.Fatalf("phase = %v", h.r.Phase())

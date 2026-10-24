@@ -62,7 +62,8 @@ type Config struct {
 	HoldTimer       time.Duration // the holder must pass within this
 	PromptTimeout   time.Duration // reveal and forced-pass prompts
 	ReconnectWindow time.Duration // a disconnected player's time to come back
-	EmptyRoomGrace  time.Duration // nobody connected for this long closes a lobby, or pauses a game
+	EmptyRoomGrace  time.Duration // nobody connected for this long pauses a game
+	LobbyEmptyGrace time.Duration // nobody connected for this long closes a lobby
 	LobbyPausedFor  time.Duration // a restored lobby waits this long for its members before it is closed
 	PausedFor       time.Duration // a paused game waits this long for its players before it is abandoned
 
@@ -99,6 +100,7 @@ func DefaultConfig() Config {
 		PromptTimeout:      30 * time.Second,
 		ReconnectWindow:    90 * time.Second,
 		EmptyRoomGrace:     time.Minute,
+		LobbyEmptyGrace:    20 * time.Minute,
 		PausedFor:          24 * time.Hour,
 		LobbyPausedFor:     time.Hour,
 		SpectatorsSeeCards: true,
@@ -688,8 +690,9 @@ func (r *Room) close(at time.Time, reason string) {
 	r.broadcast(RoomClosed{Reason: reason})
 }
 
-// updateEmpty closes the room if nobody has been connected for the grace
-// period.
+// updateEmpty closes a lobby, or pauses a game, if nobody has been connected
+// for the grace period. A game's grace stays shorter than the reconnect
+// window so it pauses before its teams are dropped.
 func (r *Room) updateEmpty(now time.Time) {
 	k := dkey{kind: dkEmpty}
 	if r.phase == PhaseClosed || r.paused {
@@ -703,7 +706,11 @@ func (r *Room) updateEmpty(now time.Time) {
 	}
 	switch {
 	case connected == 0 && !r.dl.has(k):
-		r.dl.set(k, now.Add(r.cfg.EmptyRoomGrace))
+		grace := r.cfg.EmptyRoomGrace
+		if r.phase == PhaseLobby {
+			grace = r.cfg.LobbyEmptyGrace
+		}
+		r.dl.set(k, now.Add(grace))
 	case connected > 0 && r.dl.has(k):
 		r.dl.clear(k)
 	}
