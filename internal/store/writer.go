@@ -148,7 +148,7 @@ func (w *Writer) handle(item any) {
 			w.try("forget lobby", func(ctx context.Context) error { return w.s.DeleteLobby(ctx, v.Room) })
 			return
 		}
-		row := LobbyRow{Room: v.Room, Creator: string(v.Creator), UpdatedAt: v.At}
+		row := LobbyRow{Room: v.Room, Creator: string(v.Creator), Short: v.Short, UpdatedAt: v.At}
 		for _, m := range v.Members {
 			row.Members = append(row.Members, string(m))
 		}

@@ -254,7 +254,7 @@ func (r *Room) reportLobby(now time.Time) {
 		}
 		return
 	}
-	st := LobbyState{Room: r.id, At: now, Creator: r.creator, Members: slices.Clone(r.order)}
+	st := LobbyState{Room: r.id, At: now, Creator: r.creator, Members: slices.Clone(r.order), Short: r.short}
 	for _, id := range r.order {
 		if p := r.members[id].partner; p != "" && id < p {
 			st.Pairs = append(st.Pairs, [2]engine.PlayerID{id, p})
@@ -288,6 +288,7 @@ type SavedLobby struct {
 	Members []engine.PlayerID
 	Pairs   [][2]engine.PlayerID
 	Invites [][2]engine.PlayerID
+	Short   bool      // the creator chose a short game
 	Since   time.Time // when the lobby last changed
 }
 
@@ -307,6 +308,7 @@ func RestoreLobby(cfg Config, sl SavedLobby, now time.Time) (*Room, error) {
 		id:         sl.ID,
 		creator:    sl.Creator,
 		cfg:        cfg,
+		short:      sl.Short,
 		rng:        rand.New(rand.NewPCG(uint64(now.UnixNano()), uint64(len(sl.Members)))),
 		members:    map[engine.PlayerID]*member{},
 		spectators: map[engine.PlayerID]bool{},
@@ -341,7 +343,7 @@ func RestoreLobby(cfg Config, sl SavedLobby, now time.Time) (*Room, error) {
 	r.paused = true
 	r.pausedUntil = until
 	r.dl.set(dkey{kind: dkPause}, until)
-	st := LobbyState{Room: sl.ID, Creator: sl.Creator, Members: slices.Clone(r.order), Pairs: sl.Pairs, Invites: sl.Invites}
+	st := LobbyState{Room: sl.ID, Creator: sl.Creator, Members: slices.Clone(r.order), Pairs: sl.Pairs, Invites: sl.Invites, Short: sl.Short}
 	r.savedLobby = &st
 	return r, nil
 }

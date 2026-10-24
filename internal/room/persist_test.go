@@ -60,7 +60,7 @@ func TestALobbyIsReportedGoneWhenTheGameStartsOrTheRoomCloses(t *testing.T) {
 }
 
 func savedLobbyOf(l LobbyState) SavedLobby {
-	return SavedLobby{ID: l.Room, Creator: l.Creator, Members: l.Members, Pairs: l.Pairs, Invites: l.Invites, Since: l.At}
+	return SavedLobby{ID: l.Room, Creator: l.Creator, Members: l.Members, Pairs: l.Pairs, Invites: l.Invites, Short: l.Short, Since: l.At}
 }
 
 func TestARestoredLobbyIsTheSameLobbyPausedUntilItsMembersReturn(t *testing.T) {

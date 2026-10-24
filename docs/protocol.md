@@ -32,7 +32,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `my_games` | | replies `my_games`: your paused games (below) |
 | `resume_game` | `room` | go back into one of your paused games |
 | `resume` | `after` | after reconnecting: replays what you missed (see below). `after` is the last `s` you saw, or 0 |
-| `create_room` | | replies `room_created`; you are in the room |
+| `create_room` | `short` (bool, optional) | replies `room_created`; you are in the room. `short: true` makes a short game (4 round wins, spelling J-A-C-K); leave it out for the usual long game (7 wins, J-A-C-K-P-O-T) |
 | `join` | `room` | become a player (lobby only) |
 | `spectate` | `room` | watch |
 | `leave` | | leave the lobby, drop out of a game (instant), or stop watching |
@@ -65,7 +65,7 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 - `heartbeat`: `{serverTime}`, sent every 20 seconds whether or not anything else is happening. If nothing at all arrives for about 50 seconds, treat the connection as dead and reconnect.
 - `hello`: `{you:{id,name,style}, serverTime}`. Use `serverTime` to correct clock differences when showing countdowns.
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
-- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable}`.
+- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable,paused,short}`. `short` is true when the creator chose a short game. The snapshot carries `short` too, so someone who joins a lobby can see it. `game_starting.winsToFinish` is 4 for a short game and 7 for a long one: draw the scoreboard from it, not from a fixed seven letters.
 - `room_created`: `{room}`.
 - `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,pausedUntil?,teamChat?,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.

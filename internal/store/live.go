@@ -281,6 +281,7 @@ type LobbyRow struct {
 	Members   []string
 	Pairs     [][2]string
 	Invites   [][2]string
+	Short     bool
 	UpdatedAt time.Time
 }
 
@@ -288,11 +289,12 @@ type lobbyState struct {
 	Members []string    `json:"members"`
 	Pairs   [][2]string `json:"pairs"`
 	Invites [][2]string `json:"invites"`
+	Short   bool        `json:"short,omitempty"`
 }
 
 // SaveLobby keeps a lobby as it stands now, replacing what was kept before.
 func (s *Store) SaveLobby(ctx context.Context, l LobbyRow) error {
-	b, err := json.Marshal(lobbyState{Members: l.Members, Pairs: l.Pairs, Invites: l.Invites})
+	b, err := json.Marshal(lobbyState{Members: l.Members, Pairs: l.Pairs, Invites: l.Invites, Short: l.Short})
 	if err != nil {
 		return err
 	}
@@ -329,7 +331,7 @@ func (s *Store) Lobbies(ctx context.Context) (ok []LobbyRow, bad map[string]erro
 			bad[l.Room] = err
 			continue
 		}
-		l.Members, l.Pairs, l.Invites = st.Members, st.Pairs, st.Invites
+		l.Members, l.Pairs, l.Invites, l.Short = st.Members, st.Pairs, st.Invites, st.Short
 		ok = append(ok, l)
 	}
 	return ok, bad, rows.Err()

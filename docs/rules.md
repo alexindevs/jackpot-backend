@@ -80,7 +80,8 @@ Anything not marked is Decided.
 
 ## 7. Ending the game
 
-- First team to **7 round wins** (J-A-C-K-P-O-T) wins.
+- First team to **7 round wins** (J-A-C-K-P-O-T) wins. That is a **long** game, the default.
+- The room's creator can choose a **short** game instead when opening the room: first team to **4 round wins** (J-A-C-K). Nothing else changes. The length is fixed once the room is created. It is a config value (`ShortWinsToFinish`).
 - Or the game ends early if a **majority of teams** agree. A team counts as agreeing only when **both partners** agree.
 - At early end, the team with the most wins wins. A tie is a **drawn game**: no winner.
 

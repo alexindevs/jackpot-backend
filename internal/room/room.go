@@ -67,6 +67,11 @@ type Config struct {
 	LobbyPausedFor  time.Duration // a restored lobby waits this long for its members before it is closed
 	PausedFor       time.Duration // a paused game waits this long for its players before it is abandoned
 
+	// ShortWinsToFinish is how many round wins end a short game, which the
+	// creator can pick when opening the room. A long game, the default, uses
+	// Engine.WinsToFinish.
+	ShortWinsToFinish int
+
 	// SpectatorsSeeCards is the temporary perk: spectators see every hand.
 	SpectatorsSeeCards bool
 
@@ -103,6 +108,7 @@ func DefaultConfig() Config {
 		LobbyEmptyGrace:    20 * time.Minute,
 		PausedFor:          24 * time.Hour,
 		LobbyPausedFor:     time.Hour,
+		ShortWinsToFinish:  4,
 		SpectatorsSeeCards: true,
 		ChatRatePerSec:     1,
 		ChatBurst:          5,
@@ -130,6 +136,7 @@ type Room struct {
 	creator engine.PlayerID
 	cfg     Config
 	rng     *rand.Rand
+	short   bool // a short game: it ends at cfg.ShortWinsToFinish round wins
 
 	phase      Phase
 	members    map[engine.PlayerID]*member
@@ -159,8 +166,23 @@ type Room struct {
 	logs map[engine.PlayerID][]Out // what each recipient was last sent, for replay
 }
 
+// Option changes how a new room is set up.
+type Option func(*Room)
+
+// Short makes the room's game a short one.
+func Short() Option { return func(r *Room) { r.short = true } }
+
+// engineConfig is the engine's settings for this room's game.
+func (r *Room) engineConfig() engine.Config {
+	c := r.cfg.Engine
+	if r.short {
+		c.WinsToFinish = r.cfg.ShortWinsToFinish
+	}
+	return c
+}
+
 // New creates a room with its creator already in it.
-func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now time.Time) (*Room, []Out) {
+func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now time.Time, opts ...Option) (*Room, []Out) {
 	r := &Room{
 		id:         id,
 		creator:    creator,
@@ -175,6 +197,9 @@ func New(cfg Config, id string, creator engine.PlayerID, rng *rand.Rand, now tim
 		seqs:       map[engine.PlayerID]int64{},
 		logs:       map[engine.PlayerID][]Out{},
 		teamLog:    map[engine.TeamID][]TeamChatMessage{},
+	}
+	for _, o := range opts {
+		o(r)
 	}
 	_ = r.join(now, creator)
 	r.syncCountdown(now)
@@ -197,6 +222,7 @@ type Info struct {
 	MaxPlayers int
 	Joinable   bool
 	Paused     bool
+	Short      bool // a short game rather than a long one
 }
 
 func (r *Room) Info() Info {
@@ -212,6 +238,7 @@ func (r *Room) Info() Info {
 		MaxPlayers: r.cfg.MaxPlayers,
 		Joinable:   r.phase == PhaseLobby && len(r.members) < r.cfg.MaxPlayers,
 		Paused:     r.paused,
+		Short:      r.short,
 	}
 }
 
@@ -662,7 +689,7 @@ func (r *Room) startGame(now time.Time) {
 			specs = append(specs, engine.PlayerSpec{ID: id, Team: engine.TeamID(t)})
 		}
 	}
-	setup := engine.Setup{Config: r.cfg.Engine, Specs: specs, SeedA: r.rng.Uint64(), SeedB: r.rng.Uint64()}
+	setup := engine.Setup{Config: r.engineConfig(), Specs: specs, SeedA: r.rng.Uint64(), SeedB: r.rng.Uint64()}
 	g, err := engine.NewFromSetup(setup)
 	if err != nil {
 		r.close(now, "could not start the game")
@@ -675,7 +702,7 @@ func (r *Room) startGame(now time.Time) {
 		Demoted:         demoted,
 		Seats:           g.Seats(),
 		SuspicionPoints: r.cfg.Engine.SuspicionPoints,
-		WinsToFinish:    r.cfg.Engine.WinsToFinish,
+		WinsToFinish:    setup.Config.WinsToFinish,
 	})
 	r.startChat(now)
 }

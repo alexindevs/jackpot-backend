@@ -315,8 +315,8 @@ func (m *Manager) dropMapping(user engine.PlayerID) {
 
 // --- rooms ---
 
-// CreateRoom opens a room with user in it.
-func (m *Manager) CreateRoom(user engine.PlayerID) (string, error) {
+// CreateRoom opens a room with user in it. short asks for a short game.
+func (m *Manager) CreateRoom(user engine.PlayerID, short bool) (string, error) {
 	m.mu.Lock()
 	if _, in := m.userRoom[user]; in {
 		m.mu.Unlock()
@@ -330,7 +330,11 @@ func (m *Manager) CreateRoom(user engine.PlayerID) (string, error) {
 	m.mu.Unlock()
 
 	a, b := cryptoSeed()
-	r, initial := room.New(m.cfg.Room, id, user, mrand.New(mrand.NewPCG(a, b)), m.cfg.Now())
+	var opts []room.Option
+	if short {
+		opts = append(opts, room.Short())
+	}
+	r, initial := room.New(m.cfg.Room, id, user, mrand.New(mrand.NewPCG(a, b)), m.cfg.Now(), opts...)
 	m.launch(id, r, initial)
 	return id, nil
 }

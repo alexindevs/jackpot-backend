@@ -127,6 +127,24 @@ func TestRoomLifecycleOverTheWire(t *testing.T) {
 	b.mustOK(msg{"type": "create_room"}) // free to start their own
 }
 
+func TestCreateRoomCanAskForAShortGame(t *testing.T) {
+	_, url := newTestServer(t, nil)
+	a, b := dial(t, url, "alice"), dial(t, url, "bob")
+	a.wait("hello", isT("hello"))
+	b.wait("hello", isT("hello"))
+	a.request(msg{"type": "create_room", "short": true})
+	b.request(msg{"type": "create_room"})
+
+	short := map[string]bool{}
+	for _, v := range b.request(msg{"type": "list_rooms"})["d"].([]any) {
+		info := v.(map[string]any)
+		short[info["creator"].(string)] = info["short"] == true
+	}
+	if len(short) != 2 || !short["alice"] || short["bob"] {
+		t.Errorf("alice asked for a short game and bob did not: %v", short)
+	}
+}
+
 func TestListRoomsShowsOpenRooms(t *testing.T) {
 	_, url := newTestServer(t, nil)
 	a, b := dial(t, url, "alice"), dial(t, url, "bob")

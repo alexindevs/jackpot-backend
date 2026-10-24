@@ -40,6 +40,7 @@ type inbound struct {
 	Agree   *bool           `json:"agree,omitempty"`
 	Text    string          `json:"text,omitempty"`
 	Gesture string          `json:"gesture,omitempty"`
+	Short   bool            `json:"short,omitempty"` // create_room: a short game instead of a long one
 	After   int64           `json:"after,omitempty"` // resume: the last sequence number the client has seen
 }
 

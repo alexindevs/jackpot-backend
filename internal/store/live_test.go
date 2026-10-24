@@ -175,7 +175,7 @@ func TestExpiryClearsDisputeDataButKeepsTheSummary(t *testing.T) {
 func TestLobbiesAreSavedReplacedAndForgotten(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	l := LobbyRow{Room: "abc", Creator: "a", Members: []string{"a", "b", "c"}, Pairs: [][2]string{{"a", "b"}}, Invites: [][2]string{{"c", "a"}}, UpdatedAt: t0}
+	l := LobbyRow{Room: "abc", Creator: "a", Members: []string{"a", "b", "c"}, Pairs: [][2]string{{"a", "b"}}, Invites: [][2]string{{"c", "a"}}, Short: true, UpdatedAt: t0}
 	if err := s.SaveLobby(ctx, l); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestLobbiesAreSavedReplacedAndForgotten(t *testing.T) {
 	if err != nil || len(bad) != 0 || len(got) != 1 {
 		t.Fatalf("lobbies = %+v, bad %v, err %v", got, bad, err)
 	}
-	if !reflect.DeepEqual(got[0].Members, l2.Members) || !reflect.DeepEqual(got[0].Pairs, l2.Pairs) || !got[0].UpdatedAt.Equal(l2.UpdatedAt) || got[0].Creator != "a" {
+	if !reflect.DeepEqual(got[0].Members, l2.Members) || !reflect.DeepEqual(got[0].Pairs, l2.Pairs) || !got[0].UpdatedAt.Equal(l2.UpdatedAt) || got[0].Creator != "a" || !got[0].Short {
 		t.Errorf("lobby = %+v", got[0])
 	}
 	_ = s.SaveLobby(ctx, LobbyRow{Room: "xyz", Creator: "z", Members: []string{"z"}, UpdatedAt: t0})

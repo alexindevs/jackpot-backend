@@ -39,7 +39,7 @@ Status markers:
 
 | # | Item | Status | Where |
 | --- | --- | --- | --- |
-| G1 | **7 rounds is too long.** Kiane voted for 4; Onyeka voted for optional; both were floated. | Open | backend (`WinsToFinish` is already a setting, 7 today); frontend (the scoreboard has seven fixed letters and ignores the server's `winsToFinish`). A shorter game also means choosing which letters: J-A-C-K, or something else. |
+| G1 | **7 rounds is too long.** Kiane voted for 4; Onyeka voted for optional; both were floated. | **Decided**; backend built (not committed), frontend not built. The room's creator picks a long game (7 wins, the default) or a short one (4 wins, spelling J-A-C-K) when opening the room: `create_room` takes `short`. The room list, the snapshot and `game_starting.winsToFinish` all carry the length. | backend (done); frontend (a length choice when creating a room, show it in the room list and lobby, and draw the scoreboard from `winsToFinish` instead of seven fixed letters) |
 | G2 | **Suspect points: 3 vs 5.** Tobe only had 3 and felt penalised. Raising to 5 was discussed. | Open | backend (`SuspicionPoints`, 3 today) |
 | G3 | **A cooldown that refills suspect and jackpot attempts.** Proposed: 5 minutes. Tobe thinks that is too much: about 1 minute, or 3. The chat ends with the poll "All in favor of 5 minutes?" and **no votes recorded**. | Open | backend (new rule: points refill over time instead of only per round); frontend (show the cooldown) |
 | G4 | **Mid-game joins.** People can join **between rounds**; catching up is their own responsibility. | Decided, not built. Today `join` is lobby-only; a started game offers Watch only. | backend (a join between rounds, which changes the ring seating and teams, so it needs thought) and frontend |

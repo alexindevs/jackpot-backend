@@ -87,7 +87,7 @@ func Restore(ctx context.Context, db *store.Store, m *transport.Manager, w *stor
 	// already started is dropped instead of bringing the room back twice.
 	var saved []room.SavedLobby
 	for _, l := range lobbies {
-		sl := room.SavedLobby{ID: l.Room, Creator: engine.PlayerID(l.Creator), Since: l.UpdatedAt}
+		sl := room.SavedLobby{ID: l.Room, Creator: engine.PlayerID(l.Creator), Short: l.Short, Since: l.UpdatedAt}
 		for _, id := range l.Members {
 			sl.Members = append(sl.Members, engine.PlayerID(id))
 		}

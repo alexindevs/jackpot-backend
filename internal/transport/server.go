@@ -246,7 +246,7 @@ func (m *Manager) process(c *conn, in inbound) reply {
 	case "list_rooms":
 		return reply{t: "rooms", d: m.ListRooms()}
 	case "create_room":
-		id, err := m.CreateRoom(user)
+		id, err := m.CreateRoom(user, in.Short)
 		if err != nil {
 			return errReply(err)
 		}

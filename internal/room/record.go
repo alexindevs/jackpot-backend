@@ -83,6 +83,7 @@ type LobbyState struct {
 	Members []engine.PlayerID    // in the order they joined
 	Pairs   [][2]engine.PlayerID // partners who have teamed up
 	Invites [][2]engine.PlayerID // partner invitations still open, from then to
+	Short   bool                 // the creator chose a short game
 	Gone    bool
 }
 
