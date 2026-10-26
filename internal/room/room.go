@@ -94,7 +94,8 @@ type Config struct {
 	SignalBurst      int
 
 	// OnRecord, if set, is told about games starting, rounds being won and
-	// games ending. It runs on the room's goroutine and must not block.
+	// games ending. It runs on the room's goroutine, so it should return
+	// quickly; the database writer only holds it up when its queue is full.
 	OnRecord func(Record)
 }
 

@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/room"
@@ -149,4 +152,112 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+func newStalledWriter(queue int, maxWait time.Duration) *Writer {
+	return &Writer{
+		log: quietLog(), in: make(chan any, queue), games: map[string]int64{},
+		done: make(chan struct{}), quit: make(chan struct{}), maxWait: maxWait,
+	}
+}
+
+func TestAGameRecordWaitsForQueueSpaceInsteadOfBeingDropped(t *testing.T) {
+	w := newStalledWriter(1, 5*time.Second)
+	w.Seen(Player{ID: "a", Name: "Ada"}) // fills the queue
+
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		<-w.in // the database catches up
+	}()
+	start := time.Now()
+	w.Record(room.CommandApplied{Room: "r", Seq: 1, Command: engine.StartRound{}})
+	if took := time.Since(start); took < 100*time.Millisecond {
+		t.Errorf("the room should have waited for space, took %v", took)
+	}
+	if w.Dropped() != 0 {
+		t.Errorf("dropped = %d: a command must not be dropped while there is hope of space", w.Dropped())
+	}
+	select {
+	case item := <-w.in:
+		if _, ok := item.(room.CommandApplied); !ok {
+			t.Errorf("queued %T", item)
+		}
+	default:
+		t.Error("the command never reached the queue")
+	}
+}
+
+func TestAGameRecordIsDroppedOnlyAfterWaitingTheFullTime(t *testing.T) {
+	w := newStalledWriter(1, 80*time.Millisecond)
+	w.Seen(Player{ID: "a", Name: "Ada"})
+	start := time.Now()
+	w.Record(room.CommandApplied{Room: "r", Seq: 1, Command: engine.StartRound{}})
+	if took := time.Since(start); took < 80*time.Millisecond {
+		t.Errorf("gave up after %v, before the wait was over", took)
+	}
+	if w.Dropped() != 1 {
+		t.Errorf("dropped = %d, want 1", w.Dropped())
+	}
+}
+
+func TestOtherRecordsAreStillDroppedAtOnceWhenTheQueueIsFull(t *testing.T) {
+	w := newStalledWriter(1, 5*time.Second)
+	w.Seen(Player{ID: "a", Name: "Ada"})
+	start := time.Now()
+	w.Record(room.ChatPosted{Room: "r", Seq: 1, Player: "a", Text: "hi"})
+	if time.Since(start) > 200*time.Millisecond || w.Dropped() != 1 {
+		t.Errorf("chat should be dropped at once: %v, dropped %d", time.Since(start), w.Dropped())
+	}
+}
+
+func TestTryHardRetriesATemporaryFailureUntilItWorks(t *testing.T) {
+	w := newStalledWriter(1, time.Second)
+	calls := 0
+	ok := w.tryHard("test", func(context.Context) error {
+		calls++
+		if calls < 3 {
+			return errors.New("connection refused")
+		}
+		return nil
+	})
+	if !ok || calls != 3 {
+		t.Errorf("ok = %v after %d calls, want success on the 3rd", ok, calls)
+	}
+}
+
+func TestTryHardDoesNotRetryAnErrorTheDatabaseAnswered(t *testing.T) {
+	w := newStalledWriter(1, time.Second)
+	calls := 0
+	ok := w.tryHard("test", func(context.Context) error {
+		calls++
+		return &pgconn.PgError{Code: "23505"} // unique violation: it will fail every time
+	})
+	if ok || calls != 1 {
+		t.Errorf("ok = %v after %d calls, want one failed attempt", ok, calls)
+	}
+}
+
+func TestTryHardGivesUpQuicklyOnceTheWriterIsClosing(t *testing.T) {
+	w := newStalledWriter(1, time.Second)
+	close(w.quit)
+	calls := 0
+	start := time.Now()
+	ok := w.tryHard("test", func(context.Context) error { calls++; return errors.New("connection refused") })
+	if ok || calls != 3 || time.Since(start) > 5*time.Second {
+		t.Errorf("ok = %v, %d calls in %v: a dead database must not hold up shutdown", ok, calls, time.Since(start))
+	}
+}
+
+func TestWhichFailuresAreWorthRetrying(t *testing.T) {
+	for code, want := range map[string]bool{
+		"08006": true, "40P01": true, "53300": true, "57P01": true, // connection, deadlock, too many connections, shutdown
+		"23505": false, "22P02": false, "42P01": false, // unique violation, bad value, missing table
+	} {
+		if got := transient(&pgconn.PgError{Code: code}); got != want {
+			t.Errorf("code %s: transient = %v, want %v", code, got, want)
+		}
+	}
+	if !transient(errors.New("dial tcp: connection refused")) || !transient(context.DeadlineExceeded) {
+		t.Error("an error with no answer from the server is temporary")
+	}
 }
