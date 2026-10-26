@@ -75,6 +75,12 @@ type FalseProclaim struct {
 // Player may proclaim again.
 type ProclaimRestored struct{ Player PlayerID }
 
+// TeamAdded means two players joined the game as a new team, with no wins.
+type TeamAdded struct {
+	Team    TeamID
+	Members [2]PlayerID
+}
+
 type RoundWon struct {
 	Team       TeamID
 	Proclaimer PlayerID
@@ -106,6 +112,7 @@ func (ForcedPassRequested) isEvent() {}
 func (PlayerReset) isEvent()         {}
 func (FalseProclaim) isEvent()       {}
 func (ProclaimRestored) isEvent()    {}
+func (TeamAdded) isEvent()           {}
 func (RoundWon) isEvent()            {}
 func (TeamRemoved) isEvent()         {}
 func (VoteChanged) isEvent()         {}

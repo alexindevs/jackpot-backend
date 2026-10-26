@@ -184,6 +184,18 @@ func (s *Store) FinishGame(ctx context.Context, gameID int64, at time.Time, o Ou
 	return err
 }
 
+// AddGamePlayers records a team that joined a running game late.
+func (s *Store) AddGamePlayers(ctx context.Context, gameID int64, team int, players [2]string) error {
+	for _, p := range players {
+		if _, err := s.pool.Exec(ctx, `
+			INSERT INTO game_players (game_id, player_id, team) VALUES ($1, $2, $3)
+			ON CONFLICT (game_id, player_id) DO UPDATE SET team = EXCLUDED.team`, gameID, p, team); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Store) AbandonGame(ctx context.Context, gameID int64, at time.Time) error {
 	_, err := s.pool.Exec(ctx, `UPDATE games SET status = 'abandoned', ended_at = $2 WHERE id = $1 AND status = 'playing'`, gameID, at)
 	return err

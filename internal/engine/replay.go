@@ -91,6 +91,8 @@ func MarshalCommand(c Command) ([]byte, error) {
 		w.Kind, w.Player = "proclaim", v.By
 	case RestoreProclaim:
 		w.Kind, w.Player = "restore_proclaim", v.Player
+	case AddTeam:
+		w.Kind, w.Player, w.Target = "add_team", v.A, v.B
 	case RemoveTeam:
 		w.Kind, w.Team = "remove_team", &v.Team
 	case VoteEnd:
@@ -133,6 +135,8 @@ func UnmarshalCommand(b []byte) (Command, error) {
 		return Proclaim{By: w.Player}, nil
 	case "restore_proclaim":
 		return RestoreProclaim{Player: w.Player}, nil
+	case "add_team":
+		return AddTeam{A: w.Player, B: w.Target}, nil
 	case "remove_team":
 		if err := need(w.Team != nil, "its team"); err != nil {
 			return nil, err

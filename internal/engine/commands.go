@@ -38,6 +38,11 @@ type Proclaim struct{ By PlayerID }
 // once the lockout from a false proclamation at 0 points has run out.
 type RestoreProclaim struct{ Player PlayerID }
 
+// AddTeam brings two players into a running game as a new team, between
+// rounds. They may be new to the game or players whose earlier team was
+// removed. The team starts with no wins and is seated at the next round.
+type AddTeam struct{ A, B PlayerID }
+
 // RemoveTeam removes a team (drop-out, or the reconnect window ran out).
 type RemoveTeam struct{ Team TeamID }
 
@@ -55,5 +60,6 @@ func (Reveal) isCommand()          {}
 func (AutoReveal) isCommand()      {}
 func (Proclaim) isCommand()        {}
 func (RestoreProclaim) isCommand() {}
+func (AddTeam) isCommand()         {}
 func (RemoveTeam) isCommand()      {}
 func (VoteEnd) isCommand()         {}

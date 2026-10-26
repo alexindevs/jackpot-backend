@@ -87,6 +87,16 @@ type LobbyState struct {
 	Gone    bool
 }
 
+// TeamJoined is a team that came into a running game late. Its players are
+// added to the game's list of who played.
+type TeamJoined struct {
+	Room    string
+	At      time.Time
+	Team    engine.TeamID
+	Members [2]engine.PlayerID
+}
+
+func (TeamJoined) isRecord()     {}
 func (LobbyState) isRecord()     {}
 func (TeamChatPosted) isRecord() {}
 func (ChatPosted) isRecord()     {}

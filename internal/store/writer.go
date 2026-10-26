@@ -203,6 +203,16 @@ func (w *Writer) handle(item any) {
 			return w.s.AddTeamChat(ctx, id, TeamChatLine{Seq: v.Seq, Team: int(v.Team), Round: v.Round, Player: string(v.Player), Text: v.Text, At: v.At})
 		})
 
+	case room.TeamJoined:
+		id, ok := w.GameID(v.Room)
+		if !ok {
+			w.log.Error("late team for a game that was never saved", "room", v.Room)
+			return
+		}
+		w.try("save late team", func(ctx context.Context) error {
+			return w.s.AddGamePlayers(ctx, id, int(v.Team), [2]string{string(v.Members[0]), string(v.Members[1])})
+		})
+
 	case room.LobbyState:
 		if v.Gone {
 			w.try("forget lobby", func(ctx context.Context) error { return w.s.DeleteLobby(ctx, v.Room) })

@@ -58,10 +58,11 @@ type Snapshot struct {
 	PausedUntil *time.Time        // set while the game is paused, waiting for its players
 	TeamChat    []TeamChatMessage // your team's private chat so far, oldest first
 	Short       bool              // a short game rather than a long one
+	Waiting     []engine.PlayerID // watchers waiting to be paired into a team of their own
 }
 
 func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
-	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer], Gestures: slices.Clone(r.cfg.Gestures), Short: r.short}
+	s := Snapshot{Room: r.id, Creator: r.creator, Phase: r.phase, Spectators: len(r.spectators), Seq: r.seqs[viewer], Gestures: slices.Clone(r.cfg.Gestures), Short: r.short, Waiting: slices.Clone(r.waiting)}
 	if r.paused {
 		until := r.pausedUntil
 		s.PausedUntil = &until

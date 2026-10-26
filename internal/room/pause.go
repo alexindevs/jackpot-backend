@@ -229,6 +229,29 @@ func Restore(cfg Config, sv Saved, now time.Time) (*Room, error) {
 		r.members[sp.ID] = &member{id: sp.ID, partner: partner[sp.ID], team: sp.Team, removed: !g.Active(sp.ID)}
 		r.order = append(r.order, sp.ID)
 	}
+	// Teams that joined late are in the command log, not in the setup. Going
+	// through them in order leaves each player with their latest team.
+	for _, c := range sv.Commands {
+		at, ok := c.(engine.AddTeam)
+		if !ok {
+			continue
+		}
+		for _, p := range [2][2]engine.PlayerID{{at.A, at.B}, {at.B, at.A}} {
+			m := r.members[p[0]]
+			if m == nil {
+				m = &member{id: p[0]}
+				r.members[p[0]] = m
+				r.order = append(r.order, p[0])
+			}
+			m.partner = p[1]
+		}
+	}
+	for id, m := range r.members {
+		m.removed = !g.Active(id)
+		if team, ok := g.PlayerTeam(id); ok {
+			m.team = team
+		}
+	}
 	if g.Phase() == engine.PhaseWaiting {
 		r.phase = PhaseChat
 	} else {

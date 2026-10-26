@@ -119,6 +119,16 @@ Anything not marked is Decided.
 - **Temporary perk:** spectators can **view every player's cards**. This is expected to be removed once people start abusing it.
 - **Open:** whether removed players also see everyone's cards, or only the chat.
 
+## 11a. Joining a game that has started
+
+- Someone watching a running game, or whose team was removed from it, can ask to **join**. They go into a **waiting line** and keep watching meanwhile. Someone who isn't in the room yet can ask too: they start watching and wait.
+- **Between rounds** (while the pre-round chat is open), the **first two in the line become a new team**. A person alone in the line just waits for a second one. Joining only ever happens between rounds, so nobody is dealt in halfway through a round.
+- A team that joins late starts with **0 wins** and is **seated among the others at the next round**, using the usual rule that partners never sit side by side. The deck grows to cover the extra players. They don't get the other teams' private chat, and they begin with a fresh code chat of their own.
+- Players whose team was removed (a drop-out, or a reconnect window that ran out) can come back the same way, as a **brand new team** with 0 wins. Their old team's wins stay lost.
+- The room can hold **5 teams** at most. When it is full, a join is refused with `room_full`. A game that is paused or over can't be joined.
+- Nobody approves a late team: anyone can join automatically. *(Decided by the author.)* The line is not saved: after a server restart, late joiners who were still waiting have to ask again, but teams that had already joined are part of the saved game.
+- Anyone who leaves or disconnects while waiting drops out of the line.
+
 ## 12. Rooms and lobby
 
 - A player can **view running rooms** to spectate, **create** a room and invite people to play, **invite a specific person to be their partner**, or **join** a room and invite a partner (or anyone else).

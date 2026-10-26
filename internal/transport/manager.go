@@ -369,7 +369,17 @@ func (m *Manager) Spectate(user engine.PlayerID, roomID string) error {
 
 func (m *Manager) enter(user engine.PlayerID, roomID string, in room.Input) error {
 	m.mu.Lock()
-	if _, already := m.userRoom[user]; already {
+	if current, already := m.userRoom[user]; already {
+		// Someone watching a running game can ask to join it. The room decides.
+		if _, isJoin := in.(room.Join); isJoin && current == roomID && m.rooms[roomID] != nil {
+			mr := m.rooms[roomID]
+			m.mu.Unlock()
+			err := mr.runner.Submit(user, in)
+			if errors.Is(err, room.ErrAlreadyMember) {
+				return errAlreadyInRoom // a player asking to join the game they are already in
+			}
+			return err
+		}
 		m.mu.Unlock()
 		return errAlreadyInRoom
 	}
@@ -489,11 +499,17 @@ func (m *Manager) deliver(roomID string, outs []room.Out) {
 func profilesIn(msg room.Message) []engine.PlayerID {
 	switch v := msg.(type) {
 	case room.Snapshot:
-		ids := make([]engine.PlayerID, 0, len(v.Players))
+		ids := make([]engine.PlayerID, 0, len(v.Players)+len(v.Waiting))
 		for _, p := range v.Players {
 			ids = append(ids, p.ID)
 		}
-		return ids
+		return append(ids, v.Waiting...)
+	case room.WaitingChanged:
+		return v.Players
+	case room.GameEvent:
+		if e, ok := v.Event.(engine.TeamAdded); ok {
+			return e.Members[:]
+		}
 	case room.MemberJoined:
 		return []engine.PlayerID{v.Player}
 	case room.PartnerInvite:

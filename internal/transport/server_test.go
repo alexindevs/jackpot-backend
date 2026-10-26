@@ -439,3 +439,32 @@ func TestAReconnectingPlayerSeesTheChatTheyMissed(t *testing.T) {
 		t.Errorf("snapshot chat = %v", snap["chat"])
 	}
 }
+
+func TestWatchersCanQueueToJoinARunningGame(t *testing.T) {
+	g := startedGame(t, nil)
+	fan := dial(t, g.url, "fan")
+	fan.wait("hello", isT("hello"))
+	fan.mustOK(msg{"type": "spectate", "room": g.room})
+	fan.wait("snapshot", isT("snapshot"))
+
+	fan.mustOK(msg{"type": "join", "room": g.room}) // a watcher asks to play
+	alice := g.players["alice"]
+	alice.wait("fan's profile", func(m msg) bool { return m["t"] == "profile" && data(m)["id"] == "fan" })
+	alice.wait("waiting_changed", func(m msg) bool {
+		list, _ := data(m)["players"].([]any)
+		return m["t"] == "waiting_changed" && len(list) == 1 && list[0] == "fan"
+	})
+
+	// A player already in the game is told so, and a watcher's join is not
+	// mistaken for one.
+	if r := g.players["bob"].request(msg{"type": "join", "room": g.room}); data(r)["code"] != "already_in_room" {
+		t.Errorf("a player joining their own game: %v", data(r))
+	}
+	var waiting float64
+	for _, v := range fan.request(msg{"type": "list_rooms"})["d"].([]any) {
+		waiting = v.(map[string]any)["waiting"].(float64)
+	}
+	if waiting != 1 {
+		t.Errorf("the room list should say 1 is waiting, got %v", waiting)
+	}
+}

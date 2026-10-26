@@ -144,5 +144,8 @@ var (
 	ErrBadReveal               = errors.New("invalid reveal")
 	ErrProclaimRevoked         = errors.New("player may no longer proclaim")
 	ErrNotRevoked              = errors.New("player's right to proclaim is not revoked")
+	ErrBadTeam                 = errors.New("a team needs two different players")
+	ErrAlreadyPlaying          = errors.New("player is already in the game")
+	ErrTooManyTeams            = errors.New("the game has the most players it can hold")
 	ErrPartnerHoldsPassingCard = errors.New("cannot proclaim while your partner holds the passing card")
 )

@@ -149,6 +149,7 @@ type Room struct {
 	order      []engine.PlayerID // join order, for deterministic output
 	spectators map[engine.PlayerID]bool
 	invites    map[inviteKey]bool
+	waiting    []engine.PlayerID // watchers who asked to join a running game, in order
 
 	game    *engine.State
 	dl      *deadlines
@@ -226,7 +227,8 @@ type Info struct {
 	Teams      int // teams formed so far (pairs)
 	Spectators int
 	MaxPlayers int
-	Joinable   bool
+	Joinable   bool // a join request would be accepted: into the lobby, or into the waiting line of a running game
+	Waiting    int  // watchers waiting to be paired into a team of their own
 	Paused     bool
 	Short      bool // a short game rather than a long one
 }
@@ -242,7 +244,8 @@ func (r *Room) Info() Info {
 		ID: r.id, Creator: r.creator, Phase: r.phase,
 		Players: len(r.members), Teams: pairs / 2, Spectators: len(r.spectators),
 		MaxPlayers: r.cfg.MaxPlayers,
-		Joinable:   r.phase == PhaseLobby && len(r.members) < r.cfg.MaxPlayers,
+		Joinable:   r.joinable(),
+		Waiting:    len(r.waiting),
 		Paused:     r.paused,
 		Short:      r.short,
 	}
@@ -446,7 +449,18 @@ func (r *Room) activeMember(id engine.PlayerID) (*member, error) {
 
 // --- lobby ---
 
+// joinable says whether a join request would be accepted right now.
+func (r *Room) joinable() bool {
+	if r.game == nil {
+		return r.phase == PhaseLobby && len(r.members) < r.cfg.MaxPlayers
+	}
+	return !r.paused && (r.phase == PhaseChat || r.phase == PhasePlaying) && len(r.game.Teams()) < r.cfg.MaxPlayers/2
+}
+
 func (r *Room) join(now time.Time, id engine.PlayerID) error {
+	if r.game != nil {
+		return r.joinLate(now, id)
+	}
 	if r.phase != PhaseLobby {
 		return ErrNotJoinable
 	}
@@ -476,6 +490,7 @@ func (r *Room) spectate(id engine.PlayerID) error {
 func (r *Room) leave(now time.Time, id engine.PlayerID) error {
 	if r.spectators[id] {
 		delete(r.spectators, id)
+		r.unwait(id)
 		return nil
 	}
 	m := r.members[id]
@@ -484,6 +499,7 @@ func (r *Room) leave(now time.Time, id engine.PlayerID) error {
 	}
 	switch {
 	case m.removed || r.phase == PhaseOver:
+		r.unwait(id)
 		r.deleteMember(id)
 	case r.phase == PhaseLobby:
 		r.leaveLobby(now, id, "left")

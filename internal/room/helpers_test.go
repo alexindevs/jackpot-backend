@@ -161,8 +161,22 @@ func (r *Room) checkInvariants() error {
 			return fmt.Errorf("%s is both a member and a spectator", id)
 		}
 	}
-	if len(r.members) > r.cfg.MaxPlayers {
-		return fmt.Errorf("%d members, max %d", len(r.members), r.cfg.MaxPlayers)
+	seenWaiting := map[engine.PlayerID]bool{}
+	for _, id := range r.waiting {
+		m := r.members[id]
+		if seenWaiting[id] || (m == nil && !r.spectators[id]) || (m != nil && !m.removed) {
+			return fmt.Errorf("%s waits to join but is not a watcher (or waits twice)", id)
+		}
+		seenWaiting[id] = true
+	}
+	inGame := 0
+	for _, m := range r.members {
+		if !m.removed {
+			inGame++
+		}
+	}
+	if inGame > r.cfg.MaxPlayers {
+		return fmt.Errorf("%d members still in, max %d", inGame, r.cfg.MaxPlayers)
 	}
 	if r.paused {
 		if len(r.dl.m) != 1 || !r.dl.has(dkey{kind: dkPause}) {

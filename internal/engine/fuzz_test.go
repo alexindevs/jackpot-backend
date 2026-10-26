@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"testing"
 )
@@ -13,7 +14,7 @@ func TestRandomGames(t *testing.T) {
 	if testing.Short() {
 		games = 100
 	}
-	var rounds, wins, resets, gameOvers int
+	var rounds, wins, resets, gameOvers, added int
 	for seed := uint64(0); seed < uint64(games); seed++ {
 		teams := 2 + int(seed%4)
 		cfg := DefaultConfig()
@@ -46,12 +47,14 @@ func TestRandomGames(t *testing.T) {
 					resets++
 				case GameOver:
 					gameOvers++
+				case TeamAdded:
+					added++
 				}
 			}
 		}
 	}
-	t.Logf("%d games: %d rounds, %d round wins, %d resets, %d games over", games, rounds, wins, resets, gameOvers)
-	if wins == 0 || resets == 0 || gameOvers == 0 {
+	t.Logf("%d games: %d rounds, %d round wins, %d resets, %d games over, %d late teams", games, rounds, wins, resets, gameOvers, added)
+	if wins == 0 || resets == 0 || gameOvers == 0 || added == 0 {
 		t.Error("the fuzzer never reached some of the interesting paths")
 	}
 }
@@ -76,8 +79,13 @@ func randomCommand(r *rand.Rand, s *State, teams int) Command {
 		}
 		return s.Seatless(r)
 	}
-	if s.Phase() == PhaseWaiting && r.IntN(10) < 8 {
-		return StartRound{}
+	if s.Phase() == PhaseWaiting {
+		switch x := r.IntN(10); {
+		case x < 2:
+			return lateTeam(r, pick)
+		case x < 8:
+			return StartRound{}
+		}
 	}
 	switch n := r.IntN(100); {
 	case n < 35:
@@ -102,6 +110,8 @@ func randomCommand(r *rand.Rand, s *State, teams int) Command {
 		return Proclaim{By: pick()}
 	case n < 87:
 		return RemoveTeam{Team: TeamID(r.IntN(teams + 1))}
+	case n < 89:
+		return lateTeam(r, pick)
 	case n < 92:
 		return VoteEnd{Player: pick(), Agree: r.IntN(3) != 0}
 	}
@@ -125,4 +135,15 @@ func sortIDs(ids []PlayerID) {
 			ids[j], ids[j-1] = ids[j-1], ids[j]
 		}
 	}
+}
+
+// lateTeam asks for a team made of new people, or sometimes of players who are
+// already in the game or were removed from it.
+func lateTeam(r *rand.Rand, pick func() PlayerID) Command {
+	a := PlayerID(fmt.Sprintf("late%d", r.IntN(4)))
+	b := PlayerID(fmt.Sprintf("late%d", r.IntN(4)))
+	if r.IntN(3) == 0 {
+		a, b = pick(), pick()
+	}
+	return AddTeam{A: a, B: b}
 }

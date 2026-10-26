@@ -59,9 +59,9 @@ func TestAFullRoomStartsImmediately(t *testing.T) {
 	if h.r.dl.has(dkey{kind: dkCountdown}) {
 		t.Error("the countdown should be gone")
 	}
-	h.mustFail(pid(10), Join{}, ErrNotJoinable)
-	h.must(pid(10), Spectate{}) // but they can watch
-	h.mustFail(pid(3), Join{}, ErrNotJoinable)
+	h.mustFail(pid(10), Join{}, ErrRoomFull) // five teams is the most
+	h.must(pid(10), Spectate{})              // but they can watch
+	h.mustFail(pid(3), Join{}, ErrAlreadyMember)
 }
 
 // Accepting a partner invite joins you to the room and pairs you. If that
@@ -191,7 +191,10 @@ func TestAnOddPlayerOutBecomesASpectator(t *testing.T) {
 		t.Error("the leftover player should be watching")
 	}
 	h.mustFail(out, Ready{Ready: true}, ErrNotPlayer)
-	h.mustFail(out, Join{}, ErrNotJoinable)
+	h.must(out, Join{}) // they can ask to play in a new team, and wait in line
+	if !slices.Contains(h.r.waiting, out) {
+		t.Error("the leftover player should be waiting for a partner")
+	}
 }
 
 func TestInvitesAreDroppedWhenTheGameStarts(t *testing.T) {
@@ -205,11 +208,14 @@ func TestInvitesAreDroppedWhenTheGameStarts(t *testing.T) {
 	h.mustFail(pid(2), AcceptPartner{From: pid(1)}, ErrWrongPhase)
 }
 
-func TestNoJoiningAfterStartButWatchingIsFine(t *testing.T) {
+func TestAStartedGameTakesAJoinAsAPlaceInLineAndWatchingIsFine(t *testing.T) {
 	h := newHarness(t, 13)
 	h.startGame(4)
-	h.mustFail("late", Join{}, ErrNotJoinable)
-	h.must("late", Spectate{})
+	h.must("late", Join{})
+	if !slices.Equal(h.r.waiting, []engine.PlayerID{"late"}) {
+		t.Errorf("waiting = %v", h.r.waiting)
+	}
+	h.must("fan", Spectate{})
 	h.mustFail(pid(0), Spectate{}, ErrAlreadyMember)
 }
 

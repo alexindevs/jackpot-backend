@@ -33,7 +33,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `resume_game` | `room` | go back into one of your paused games |
 | `resume` | `after` | after reconnecting: replays what you missed (see below). `after` is the last `s` you saw, or 0 |
 | `create_room` | `short` (bool, optional) | replies `room_created`; you are in the room. `short: true` makes a short game (4 round wins, spelling J-A-C-K); leave it out for the usual long game (7 wins, J-A-C-K-P-O-T) |
-| `join` | `room` | become a player (lobby only) |
+| `join` | `room` | become a player in a lobby. In a game that has started, ask to play: you watch while you wait in line, and between rounds the first two in line become a new team (rules section 11a). Works for a watcher already in the room too |
 | `spectate` | `room` | watch |
 | `leave` | | leave the lobby, drop out of a game (instant), or stop watching |
 | `start_now` | | creator only; needs 2+ teams and nobody without a partner |
@@ -65,10 +65,11 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 - `heartbeat`: `{serverTime}`, sent every 20 seconds whether or not anything else is happening. If nothing at all arrives for about 50 seconds, treat the connection as dead and reconnect.
 - `hello`: `{you:{id,name,style}, serverTime}`. Use `serverTime` to correct clock differences when showing countdowns.
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
-- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable,paused,short}`. `short` is true when the creator chose a short game. The snapshot carries `short` too, so someone who joins a lobby can see it. `game_starting.winsToFinish` is 4 for a short game and 7 for a long one: draw the scoreboard from it, not from a fixed seven letters.
+- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable,waiting,paused,short}`. `joinable` means a `join` would be accepted: into a lobby, or into the waiting line of a running game that has room for another team. `waiting` is how many watchers are waiting to be paired into a team. `short` is true when the creator chose a short game. The snapshot carries `short` too, so someone who joins a lobby can see it. `game_starting.winsToFinish` is 4 for a short game and 7 for a long one: draw the scoreboard from it, not from a fixed seven letters.
 - `room_created`: `{room}`.
 - `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,pausedUntil?,teamChat?,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass}`; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.
+- `waiting_changed`: `{players}`. Who is waiting to be paired into a team of their own, in order, sent to everyone in the room whenever the line changes. The snapshot carries the same list as `waiting`. When two waiting players become a team you get the game event `team_added {team,members}` and each of them gets a fresh `snapshot`.
 
 **Lobby**: `member_joined {player}`, `member_left {player,reason}`, `room_invite {from,room}`, `partner_invite {from,to,room}`, `partner_declined {by}`, `team_formed {a,b}`, `team_broken {a,b}`, `countdown_started {endsAt}`, `countdown_cancelled`, `game_starting {teams:[[a,b]],demoted:[],seats:[...],suspicionPoints,winsToFinish}`. A team's id is its index in `teams`. `seats` is the ring order, clockwise: the holder passes to the next entry, wrapping around. `suspicionPoints` (3) is what every player has at the start of every round, and `winsToFinish` (7) ends the game. Demoted players are now spectators. If the ring is reshuffled between rounds you get a `seats_reshuffled` game event with the new order.
 
@@ -83,7 +84,7 @@ Invitations are only delivered to people who are connected at that moment. They 
 - `hand_update {player,hand}`: your whole hand, sent when it changes. `hand` is four counts, one per card type.
 - `timer_started {kind,player,endsAt}`: `kind` is `hold`, `reveal`, `forced`, `reconnect` or `proclaim`. A `proclaim` timer means `player` is locked out of proclaiming until `endsAt`.
 - `connection_changed {player,connected,reconnectBy}`.
-- `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `proclaim_restored {player}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
+- `game_event` kinds: `seats_reshuffled {seats}`, `round_started {round,holder}`, `passed {from,to,card,auto}`, `suspicion_raised {by,target,pointsLeft,required}`, `reveal_requested {target,required,options}` (only the target gets it), `suspicion_freed {target,revealed}`, `suspicion_failed {target,hand}`, `forced_pass_requested {player}`, `player_reset {player,minted}`, `false_proclaim {by,pointsLeft,revoked}`, `proclaim_restored {player}`, `round_won {team,proclaimer,holder,wins,letter}`, `team_added {team,members}`, `team_removed {team,members}`, `vote_changed {player,agree}`, `game_over {result:{winner,draw,reason,countsForStats,wins}}`.
 
 The card in a `passed` event is only real for the player who passed it and the player who received it; everyone else gets `255`.
 

@@ -25,6 +25,7 @@ func (r *Room) startChat(now time.Time) {
 	at := now.Add(r.cfg.PreRoundChat)
 	r.dl.set(dkey{kind: dkChat}, at)
 	r.broadcast(ChatStarted{Round: r.game.Round() + 1, EndsAt: at})
+	r.formLateTeams(now)
 }
 
 func (r *Room) setReady(now time.Time, id engine.PlayerID, ready bool) error {
@@ -198,6 +199,9 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 			res := e.Result
 			r.record(GameFinished{Room: r.id, At: now, Result: &res})
 		}
+		if ta, ok := ev.(engine.TeamAdded); ok {
+			r.teamAdded(now, ta)
+		}
 		if rm, ok := ev.(engine.TeamRemoved); ok {
 			for _, id := range rm.Members {
 				if m := r.members[id]; m != nil {
@@ -315,6 +319,7 @@ func (r *Room) connect(now time.Time, id engine.PlayerID) error {
 func (r *Room) disconnect(now time.Time, id engine.PlayerID) error {
 	if r.spectators[id] {
 		delete(r.spectators, id)
+		r.unwait(id)
 		return nil
 	}
 	m := r.members[id]
@@ -322,6 +327,7 @@ func (r *Room) disconnect(now time.Time, id engine.PlayerID) error {
 		return ErrNotPlayer
 	}
 	if m.removed {
+		r.unwait(id)
 		r.deleteMember(id)
 		return nil
 	}

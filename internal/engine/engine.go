@@ -159,6 +159,8 @@ func (s *State) Apply(cmd Command) ([]Event, error) {
 		return s.proclaim(c.By)
 	case RestoreProclaim:
 		return s.restoreProclaim(c.Player)
+	case AddTeam:
+		return s.addTeam(c.A, c.B)
 	case RemoveTeam:
 		return s.removeTeam(c.Team)
 	case VoteEnd:
@@ -244,6 +246,11 @@ func (s *State) startRound() ([]Event, error) {
 		evs = append(evs, SeatsReshuffled{Seats: slices.Clone(s.seats)})
 	}
 	s.round++
+	// A team that joined late means more players to deal to. The deck only
+	// ever grows here, so games saved before late joins existed replay as they did.
+	if want := len(s.seats) + s.cfg.SpareCopies; want > s.copies {
+		s.copies = want
+	}
 	for t := range s.pool {
 		s.pool[t] = s.copies
 	}
@@ -523,6 +530,58 @@ func (s *State) removeTeam(team TeamID) ([]Event, error) {
 		s.reshuffle = true
 	}
 	return append(evs, s.checkVotes()...), nil
+}
+
+// MaxPlayers is the most players a game can hold (5 teams of 2).
+const MaxPlayers = 10
+
+// PlayerTeam is the team a player belongs to, or was last on if they were
+// removed. ok is false for someone who has never been in the game.
+func (s *State) PlayerTeam(id PlayerID) (TeamID, bool) {
+	p, ok := s.players[id]
+	if !ok {
+		return 0, false
+	}
+	return p.team, true
+}
+
+func (s *State) addTeam(a, b PlayerID) ([]Event, error) {
+	if s.phase != PhaseWaiting {
+		return nil, ErrWrongPhase
+	}
+	if a == "" || b == "" || a == b {
+		return nil, ErrBadTeam
+	}
+	for _, id := range []PlayerID{a, b} {
+		if p, ok := s.players[id]; ok && p.active {
+			return nil, ErrAlreadyPlaying
+		}
+	}
+	if len(s.seats)+2 > MaxPlayers {
+		return nil, ErrTooManyTeams
+	}
+	// Team ids are never reused, so a removed team's wins can't leak into a
+	// new one.
+	var team TeamID
+	for _, p := range s.players {
+		team = max(team, p.team+1)
+	}
+	for t := range s.wins {
+		team = max(team, t+1)
+	}
+	for _, id := range []PlayerID{a, b} {
+		p := s.players[id]
+		if p == nil {
+			p = &player{id: id}
+			s.players[id] = p
+		}
+		p.team, p.active, p.canProclaim, p.hand, p.points = team, true, true, Hand{}, 0
+	}
+	s.wins[team] = 0
+	s.teams = append(s.teams, team)
+	s.seats = append(s.seats, a, b)
+	s.reshuffle = true // seat the new team among the others before the next round
+	return []Event{TeamAdded{Team: team, Members: [2]PlayerID{a, b}}}, nil
 }
 
 // --- ending early ---

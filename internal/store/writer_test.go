@@ -261,3 +261,30 @@ func TestWhichFailuresAreWorthRetrying(t *testing.T) {
 		t.Error("an error with no answer from the server is temporary")
 	}
 }
+
+func TestWriterSavesALateTeamAmongTheGamesPlayers(t *testing.T) {
+	s := newTestStore(t)
+	w := NewWriter(s, quietLog(), 16)
+	ctx := context.Background()
+	w.Record(room.GameStarted{Room: "r1", At: t0, Teams: [][2]engine.PlayerID{{"a", "b"}, {"c", "d"}}})
+	eventually(t, "the game to be saved", func() bool { _, ok := w.GameID("r1"); return ok })
+	w.Record(room.TeamJoined{Room: "r1", At: t0, Team: 2, Members: [2]engine.PlayerID{"e", "f"}})
+	w.Record(room.TeamJoined{Room: "r1", At: t0, Team: 3, Members: [2]engine.PlayerID{"a", "b"}}) // a removed team coming back
+	closeWriter(t, w)
+
+	var id int64
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM games WHERE room = 'r1'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Game(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	teams := map[string]int{}
+	for _, p := range g.Players {
+		teams[p.Player.ID] = p.Team
+	}
+	if len(teams) != 6 || teams["e"] != 2 || teams["f"] != 2 || teams["a"] != 3 || teams["c"] != 1 {
+		t.Errorf("players and teams = %v", teams)
+	}
+}

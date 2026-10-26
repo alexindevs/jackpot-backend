@@ -739,3 +739,99 @@ func TestAutoRevealUsesTheHandAtSuspicionTime(t *testing.T) {
 		t.Errorf("revealed %v", f.Revealed)
 	}
 }
+
+// betweenRounds plays one round to its end and leaves the game waiting for the
+// next. It returns the player who proclaimed.
+func betweenRounds(t *testing.T, teams int, seed uint64) (*State, PlayerID) {
+	t.Helper()
+	s := started(t, teams, seed)
+	var by PlayerID
+	for _, id := range s.seats {
+		if s.partnerOf(id) != s.Holder() {
+			by = id
+			break
+		}
+	}
+	setHand(t, s, s.partnerOf(by), Hand{4, 0, 0, 0})
+	mustApply(t, s, Proclaim{By: by})
+	if s.Phase() != PhaseWaiting {
+		t.Fatalf("phase = %v, want waiting", s.Phase())
+	}
+	return s, by
+}
+
+func TestAddTeamBringsInANewTeamBetweenRounds(t *testing.T) {
+	s, _ := betweenRounds(t, 2, 16)
+	evs := mustApply(t, s, AddTeam{A: "x", B: "y"})
+	added, ok := find[TeamAdded](evs)
+	if !ok || added.Members != [2]PlayerID{"x", "y"} {
+		t.Fatalf("events = %v", evs)
+	}
+	if len(s.Teams()) != 3 || s.Wins(added.Team) != 0 || len(s.Seats()) != 6 {
+		t.Errorf("teams %v, wins %d, seats %v", s.Teams(), s.Wins(added.Team), s.Seats())
+	}
+	if team, ok := s.PlayerTeam("x"); !ok || team != added.Team {
+		t.Errorf("x is on team %d, want %d", team, added.Team)
+	}
+
+	// The next round seats and deals everyone, newcomers included, and the
+	// deck grew to cover them (the invariants check conservation of cards).
+	mustApply(t, s, StartRound{})
+	for _, id := range []PlayerID{"x", "y"} {
+		if s.Hand(id).Total() < 4 || s.Points(id) != 3 {
+			t.Errorf("%s: hand %v, points %d", id, s.Hand(id), s.Points(id))
+		}
+	}
+	if partnersAdjacent(s.seats, s.teamOf) {
+		t.Error("the new team must not sit beside its partner")
+	}
+}
+
+func TestAddTeamRefusesWhatItCannotDo(t *testing.T) {
+	mid := started(t, 2, 17)
+	mustFail(t, mid, AddTeam{A: "x", B: "y"}, ErrWrongPhase) // a round is running
+
+	s, by := betweenRounds(t, 2, 18)
+	mustFail(t, s, AddTeam{A: "x", B: "x"}, ErrBadTeam)
+	mustFail(t, s, AddTeam{A: "x", B: ""}, ErrBadTeam)
+	mustFail(t, s, AddTeam{A: by, B: "y"}, ErrAlreadyPlaying)
+
+	full, _ := betweenRounds(t, 5, 19)
+	mustFail(t, full, AddTeam{A: "x", B: "y"}, ErrTooManyTeams)
+}
+
+func TestAPlayerWhoseTeamWasRemovedCanComeBackAsANewTeam(t *testing.T) {
+	s, by := betweenRounds(t, 3, 20)
+	old, _ := s.PlayerTeam(by)
+	var gone []PlayerID
+	for id, p := range s.players {
+		if p.team == old {
+			gone = append(gone, id)
+		}
+	}
+	slices.Sort(gone)
+	mustApply(t, s, RemoveTeam{Team: old})
+	if s.Active(gone[0]) {
+		t.Fatal("the team should be out")
+	}
+	evs := mustApply(t, s, AddTeam{A: gone[0], B: gone[1]})
+	added, _ := find[TeamAdded](evs)
+	if added.Team == old || s.Wins(added.Team) != 0 {
+		t.Errorf("came back as team %d (was %d) with %d wins", added.Team, old, s.Wins(added.Team))
+	}
+	if !s.Active(gone[0]) || !s.Active(gone[1]) || len(s.Teams()) != 3 {
+		t.Error("both players should be back in")
+	}
+	mustApply(t, s, StartRound{})
+}
+
+func TestAddTeamSurvivesBeingStoredAndReplayed(t *testing.T) {
+	b, err := MarshalCommand(AddTeam{A: "x", B: "y"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := UnmarshalCommand(b)
+	if err != nil || c != (AddTeam{A: "x", B: "y"}) {
+		t.Fatalf("round trip gave %v, %v", c, err)
+	}
+}
