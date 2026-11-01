@@ -270,9 +270,14 @@ func TestRateLimiting(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		// The server hangs up part-way through, so later writes may fail.
 		_ = c.ws.Write(context.Background(), websocket.MessageText, []byte(`{"type":"ping"}`))
+		time.Sleep(5 * time.Millisecond)
 	}
-	if code := c.waitClosed(); code != websocket.StatusPolicyViolation {
-		t.Errorf("close code %d, want %d", code, websocket.StatusPolicyViolation)
+	// A client that floods a server while it hangs up may see the close frame
+	// or may see the connection reset before the frame arrives; which one
+	// depends on timing. Either way the server hung up, and why it did is
+	// checked exactly in TestFloodingIsLoggedAsRateLimiting.
+	if code := c.waitClosed(); code != websocket.StatusPolicyViolation && code != -1 {
+		t.Errorf("close code %d, want %d or a dropped connection (-1)", code, websocket.StatusPolicyViolation)
 	}
 }
 

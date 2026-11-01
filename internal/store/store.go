@@ -135,7 +135,10 @@ func (s *Store) UpsertPlayer(ctx context.Context, p Player) error {
 	return err
 }
 
-// StartGame records a game and its players. Teams[i] is team i.
+// StartGame records a game and its players. Teams[i] is team i. A room starts
+// one game at a given moment, so asking again for the same room and time (a
+// retry after an answer was lost) gives back the game already saved instead of
+// making a second one.
 func (s *Store) StartGame(ctx context.Context, room string, at time.Time, teams [][2]string) (int64, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -143,12 +146,17 @@ func (s *Store) StartGame(ctx context.Context, room string, at time.Time, teams 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id int64
-	if err := tx.QueryRow(ctx, `INSERT INTO games (room, started_at) VALUES ($1, $2) RETURNING id`, room, at).Scan(&id); err != nil {
+	err = tx.QueryRow(ctx, `SELECT id FROM games WHERE room = $1 AND started_at = $2 ORDER BY id LIMIT 1`, room, at).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = tx.QueryRow(ctx, `INSERT INTO games (room, started_at) VALUES ($1, $2) RETURNING id`, room, at).Scan(&id)
+	}
+	if err != nil {
 		return 0, err
 	}
 	for team, pair := range teams {
 		for _, player := range pair {
-			if _, err := tx.Exec(ctx, `INSERT INTO game_players (game_id, player_id, team) VALUES ($1, $2, $3)`, id, player, team); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO game_players (game_id, player_id, team) VALUES ($1, $2, $3)
+				ON CONFLICT (game_id, player_id) DO NOTHING`, id, player, team); err != nil {
 				return 0, err
 			}
 		}

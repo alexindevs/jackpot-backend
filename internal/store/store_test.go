@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -95,11 +96,13 @@ func TestPlayersAreUpsertedAndRefreshed(t *testing.T) {
 	}
 }
 
+var playCount atomic.Int64
+
 // play records a whole game: teams, rounds, and an outcome.
 func play(t *testing.T, s *Store, teams [][2]string, rounds []RoundSummary, o *Outcome) int64 {
 	t.Helper()
 	ctx := context.Background()
-	id, err := s.StartGame(ctx, "room", t0, teams)
+	id, err := s.StartGame(ctx, fmt.Sprintf("room%d", playCount.Add(1)), t0, teams) // every game gets its own room, as in life
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -206,12 +206,20 @@ func TestPlayersGoBackToAPausedGameAndItResumesWhenAllAreBack(t *testing.T) {
 }
 
 func TestLeavingAPausedGameBeforeItResumesFindsItAgainInTheList(t *testing.T) {
-	url, roomID, _ := afterARestart(t, nil)
+	url, roomID, m := afterARestart(t, nil)
 	alice := dial(t, url, "alice")
 	alice.wait("hello", isT("hello"))
 	alice.mustOK(msg{"type": "resume_game", "room": roomID})
 	alice.wait("snapshot", isT("snapshot"))
 	_ = alice.ws.Close(1000, "tunnel")
+	// Let the server notice she left before she comes back. If the new socket
+	// arrived first the server would take it for her old tab being replaced,
+	// and she would simply still be in the game.
+	eventually(t, "the server to notice she left", func() bool {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		return m.conns["alice"] == nil
+	})
 
 	alice2 := dial(t, url, "alice")
 	alice2.wait("hello", isT("hello"))

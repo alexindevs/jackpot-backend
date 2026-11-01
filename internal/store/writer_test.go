@@ -288,3 +288,73 @@ func TestWriterSavesALateTeamAmongTheGamesPlayers(t *testing.T) {
 		t.Errorf("players and teams = %v", teams)
 	}
 }
+
+func TestSavesStayInOrderEvenWhenTheQueueBacksUp(t *testing.T) {
+	s := newTestStore(t)
+	w := NewWriter(s, quietLog(), 2) // tiny, so the rooms have to wait for space
+	ctx := context.Background()
+	w.Record(room.GameStarted{Room: "r1", At: t0, Teams: [][2]engine.PlayerID{{"a", "b"}, {"c", "d"}}})
+	eventually(t, "the game to be saved", func() bool { _, ok := w.GameID("r1"); return ok })
+
+	const n = 300
+	for seq := 1; seq <= n; seq++ {
+		w.Record(room.CommandApplied{Room: "r1", At: t0, Seq: seq, Command: engine.StartRound{}})
+	}
+	closeWriter(t, w)
+	if w.Dropped() != 0 {
+		t.Fatalf("dropped = %d: a game's commands must never be dropped", w.Dropped())
+	}
+
+	var id int64
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM games WHERE room = 'r1'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	// ctid is where each row was physically written, which in a table that
+	// only ever receives inserts is the order they were saved in.
+	rows, err := s.pool.Query(ctx, `SELECT seq FROM game_events WHERE game_id = $1 ORDER BY ctid`, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	want := 1
+	for rows.Next() {
+		var seq int
+		if err := rows.Scan(&seq); err != nil {
+			t.Fatal(err)
+		}
+		if seq != want {
+			t.Fatalf("saved seq %d where %d was expected", seq, want)
+		}
+		want++
+	}
+	if want != n+1 {
+		t.Errorf("saved %d commands, want %d", want-1, n)
+	}
+}
+
+func TestStartingTheSameGameTwiceGivesTheSameGame(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	teams := [][2]string{{"a", "b"}, {"c", "d"}}
+	first, err := s.StartGame(ctx, "r1", t0, teams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.StartGame(ctx, "r1", t0, teams) // a retry after the first answer was lost
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != first {
+		t.Errorf("the retry made game %d, the first was %d", again, first)
+	}
+	var games, players int
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM games WHERE room = 'r1'`).Scan(&games)
+	_ = s.pool.QueryRow(ctx, `SELECT count(*) FROM game_players WHERE game_id = $1`, first).Scan(&players)
+	if games != 1 || players != 4 {
+		t.Errorf("%d games and %d player rows, want 1 and 4", games, players)
+	}
+	other, _ := s.StartGame(ctx, "r1", t0.Add(time.Hour), teams) // a different game in a reused room id
+	if other == first {
+		t.Error("a game at another time is another game")
+	}
+}
