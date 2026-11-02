@@ -65,6 +65,15 @@ func (d *Driver) think(lo, hi float64) time.Duration {
 	return time.Duration(s / d.cfg.Speed * float64(time.Second))
 }
 
+// respond is how long a bot takes to do something: between 5 and 37 seconds, so
+// it plays at a person's pace and never snaps back at once.
+func (d *Driver) respond() time.Duration { return d.think(5, 37) }
+
+// respondPrompt is the same for a question the server only waits 30 seconds
+// for (what to show when suspected, which card to give up), so a bot answers
+// in time like a quick person would.
+func (d *Driver) respondPrompt() time.Duration { return d.think(5, 25) }
+
 func (d *Driver) ids() []engine.PlayerID {
 	out := make([]engine.PlayerID, 0, len(d.bots))
 	for id := range d.bots {

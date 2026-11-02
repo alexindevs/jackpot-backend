@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -37,6 +38,8 @@ type client struct {
 	mu   sync.Mutex
 	msgs []msg
 }
+
+var nextRequestID atomic.Int64
 
 func dial(t *testing.T, wsURL, name string) *client {
 	t.Helper()
@@ -97,7 +100,7 @@ func (c *client) wait(what string, match func(msg) bool) msg {
 
 func (c *client) ok(v msg) msg {
 	c.t.Helper()
-	id := float64(time.Now().UnixNano())
+	id := float64(nextRequestID.Add(1)) // not the clock: two requests can share a tick
 	v["id"] = id
 	c.send(v)
 	r := c.wait("a reply to "+fmt.Sprint(v["type"]), func(m msg) bool { return m["id"] == id })

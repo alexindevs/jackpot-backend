@@ -226,7 +226,7 @@ func TestPrivateTeamChatSurvivesARestart(t *testing.T) {
 // try is ok without the failure: it returns the reply, error or not.
 func (c *client) try(v msg) msg {
 	c.t.Helper()
-	id := float64(time.Now().UnixNano())
+	id := float64(nextRequestID.Add(1))
 	v["id"] = id
 	c.send(v)
 	return c.wait("a reply to "+fmt.Sprint(v["type"]), func(m msg) bool { return m["id"] == id })

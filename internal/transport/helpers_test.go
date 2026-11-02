@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,10 +179,12 @@ func data(m msg) msg {
 	return d
 }
 
+var nextRequestID atomic.Int64
+
 // request sends a request with an id and waits for its ok or error reply.
 func (c *client) request(v msg) msg {
 	c.t.Helper()
-	id := float64(time.Now().UnixNano())
+	id := float64(nextRequestID.Add(1)) // a clock can give two requests the same value, and a reply would then match the wrong one
 	v["id"] = id
 	c.send(v)
 	return c.wait("a reply to "+v["type"].(string), func(m msg) bool {

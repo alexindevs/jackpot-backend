@@ -60,7 +60,7 @@ A starting design. Every number below is a config value to tune.
 4. **Signal.** Send real signals following the team's code, and occasional fake signals to bait opponents into wasting suspicion. Respect the signal rate limit with room to spare.
 5. **Proclaim.** Call Jackpot for the partner when the code says the partner has four of a kind, the partner is not holding the passing card, and the bot is not locked out. Never call on a hunch: a false call costs a point, and a second one at 0 points costs three minutes.
 6. **Suspect.** Spend suspicion points sparingly (3 per round). Early heuristics: someone who has held the passing card several times in a row, someone whose signals repeat, and a small random chance. Never suspect its own partner.
-7. **Timing.** Never act instantly. Think-time is random, roughly 1.5 to 6 seconds per action, longer for harder decisions. Bots must not act at the same millisecond as each other.
+7. **Timing.** Never act instantly. A bot takes a random **5 to 37 seconds** to do anything (the author's choice), except for questions the server only waits 30 seconds for (what to show when suspected, which card to give up after being caught), where it answers within 5 to 25 seconds. It signals that it is ready only after it has posted its code, so a person can read it first. Two bots never act at the same moment.
 8. **Chat.** Light, rare public-chat lines, in a natural voice. Off by default; the team chat is the one that matters.
 
 ### Partnering: a code a person can read

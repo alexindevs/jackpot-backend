@@ -221,3 +221,51 @@ func TestTheBotPackageNeverReachesIntoTheRoomOrTheEngineState(t *testing.T) {
 		}
 	}
 }
+
+// A bot takes between 5 and 37 seconds to do anything, and no more than 25 for
+// a question the server only waits 30 seconds for.
+func TestBotsTakeFiveToThirtySevenSecondsToAct(t *testing.T) {
+	check := func(name string, k kind, snap room.Snapshot, lo, hi time.Duration) {
+		t.Helper()
+		lowest, highest := time.Hour, time.Duration(0)
+		for i := 0; i < 400; i++ {
+			d := NewDriver(uint64(i+1), Config{})
+			b := newBrain(me)
+			d.bots[me] = b
+			b.plan(t0, snap, d)
+			it := b.intents[k]
+			if it == nil {
+				t.Fatalf("%s: nothing was planned", name)
+			}
+			wait := it.at.Sub(t0)
+			lowest, highest = min(lowest, wait), max(highest, wait)
+		}
+		if lowest < lo || highest > hi {
+			t.Errorf("%s: waits ranged %v to %v, want within %v to %v", name, lowest, highest, lo, hi)
+		}
+		if highest < hi-8*time.Second || lowest > lo+8*time.Second {
+			t.Errorf("%s: waits ranged only %v to %v: the whole range should be used", name, lowest, highest)
+		}
+	}
+	pass := view(engine.Hand{3, 1, 1, 0}, me)
+	check("a pass", kPass, pass, 5*time.Second, 37*time.Second)
+
+	reveal := view(engine.Hand{3, 1, 1, 0}, partner)
+	reveal.Game.PendingReveals = []engine.PlayerID{me}
+	check("a reveal", kReveal, reveal, 5*time.Second, 25*time.Second)
+
+	forced := view(engine.Hand{3, 1, 1, 0}, me)
+	forced.Game.ForcedPass = me
+	check("a forced pass", kPass, forced, 5*time.Second, 25*time.Second)
+
+	sig := view(engine.Hand{3, 1, 0, 0}, partner) // three of a kind: it signals "close"
+	check("a signal", kSignal, sig, 5*time.Second, 37*time.Second)
+
+	chat := view(engine.Hand{}, partner)
+	chat.Phase = room.PhaseChat
+	chat.Game.Round = 0
+	chat.Players[1].Bot = false // a person is its partner, so it must write to them
+	chat.Players[1].ID = "person"
+	chat.Players[0].Partner = "person"
+	check("the team chat code", kPost, chat, 5*time.Second, 37*time.Second)
+}

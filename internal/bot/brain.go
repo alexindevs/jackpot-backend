@@ -201,11 +201,12 @@ func (b *brain) planChat(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 		if botname.IsBotID(me.Partner) {
 			b.postedRound = upcoming // a bot partner needs no message
 		} else {
-			b.schedule(kPost, now.Add(d.think(1.5, 4)), "")
+			b.schedule(kPost, now.Add(d.respond()), "")
 		}
 	}
-	if !me.Ready {
-		b.schedule(kReady, now.Add(d.think(4, 9)), "")
+	// Ready comes after the code has been posted, so a person can read it first.
+	if !me.Ready && b.postedRound == upcoming {
+		b.schedule(kReady, now.Add(d.respond()), "")
 	}
 }
 
@@ -224,9 +225,11 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 	}
 	switch {
 	case pending:
-		b.schedule(kReveal, now.Add(d.think(2, 8)), "")
-	case total == 5 && (g.Holder == b.id || g.ForcedPass == b.id):
-		b.schedule(kPass, now.Add(d.think(1.5, 7)), "")
+		b.schedule(kReveal, now.Add(d.respondPrompt()), "")
+	case total == 5 && g.ForcedPass == b.id:
+		b.schedule(kPass, now.Add(d.respondPrompt()), "") // a caught holder has 30 seconds
+	case total == 5 && g.Holder == b.id:
+		b.schedule(kPass, now.Add(d.respond()), "")
 	}
 
 	// Say how my own hand stands, in the team's code.
@@ -239,11 +242,11 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 	}
 	switch {
 	case want != b.sentState && want != 0:
-		b.schedule(kSignal, now.Add(d.think(1.5, 5)), "state")
+		b.schedule(kSignal, now.Add(d.respond()), "state")
 	case want == 0:
 		b.sentState, b.fourSent = 0, 0
 	case want == 4 && b.fourSent < 3 && now.Sub(b.lastFourAt) > d.think(15, 25):
-		b.schedule(kSignal, now.Add(d.think(1, 3)), "state")
+		b.schedule(kSignal, now.Add(d.respond()), "state")
 	}
 
 	// Read my partner.
@@ -262,7 +265,7 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 		b.trusted = nil
 	}
 	if b.trusted != nil && g.Holder != me.Partner && !now.Before(b.lockedUntil) {
-		b.schedule(kProclaim, now.Add(d.think(0.8, 2.5)), "")
+		b.schedule(kProclaim, now.Add(d.respond()), "")
 	}
 
 	// From time to time: maybe bluff, maybe suspect someone.
@@ -280,7 +283,7 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 func (b *brain) tick(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *Driver) {
 	g := snap.Game
 	if now.Sub(b.lastSignalAt) > d.think(10, 20) && d.rng.Float64() < 0.3 {
-		b.schedule(kSignal, now.Add(d.think(0.5, 3)), "bluff")
+		b.schedule(kSignal, now.Add(d.respond()), "bluff")
 	}
 	if g.Points[b.id] <= 0 || now.Sub(b.playStart) < d.think(20, 30) || now.Sub(b.lastSuspect) < d.think(25, 40) {
 		return
@@ -306,7 +309,7 @@ func (b *brain) tick(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *
 		p = 0
 	}
 	if p > 0 && d.rng.Float64() < p {
-		b.schedule(kSuspect, now.Add(d.think(1, 4)), string(target))
+		b.schedule(kSuspect, now.Add(d.respond()), string(target))
 	}
 }
 
