@@ -128,7 +128,12 @@ func (d *Driver) Wake() (time.Time, bool) {
 // Act works out what each bot does now.
 func (d *Driver) Act(now time.Time, view func(engine.PlayerID) room.Snapshot) []room.BotAct {
 	var acts []room.BotAct
-	for _, id := range d.ids() {
+	suspected := map[engine.PlayerID]bool{}
+	ids := d.ids()
+	// A different bot goes first each time, so the same one does not always win
+	// when two want to do the same thing at the same moment.
+	d.rng.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
+	for _, id := range ids {
 		b := d.bots[id]
 		if b.done {
 			continue
@@ -148,7 +153,13 @@ func (d *Driver) Act(now time.Time, view func(engine.PlayerID) room.Snapshot) []
 		for _, k := range b.dueKinds(now) {
 			it := b.intents[k]
 			delete(b.intents, k)
+			if k == kSuspect && suspected[engine.PlayerID(it.arg)] {
+				continue // another bot is suspecting them this very moment: one is enough
+			}
 			if in, ok := b.build(k, it, now, snap, d); ok {
+				if s, isSuspect := in.(room.Suspect); isSuspect {
+					suspected[s.Target] = true
+				}
 				acts = append(acts, room.BotAct{Bot: id, In: in})
 				b.fired(k, now)
 			}

@@ -86,10 +86,38 @@ type brain struct {
 	suspicions   int
 	lastSuspect  time.Time
 	nextTick     time.Time
+
+	// What makes a bot suspicious. A turn is one pass of the card.
+	teamOf     map[engine.PlayerID]engine.TeamID
+	myTeam     engine.TeamID
+	turns      int                           // passes so far this round
+	lastSignal map[engine.PlayerID]int       // the turn each player last signalled
+	recent     map[engine.PlayerID][]sigSeen // what each player signalled lately
+	tells      map[engine.PlayerID]map[string]bool
+	tellHit    map[engine.PlayerID]time.Time // used a gesture they used before a win
+	sudden     map[engine.PlayerID]time.Time // started signalling after a long quiet
+	newHolder  engine.PlayerID               // someone just got the passing card
+
+	// Collecting: a bot that is not getting anywhere changes what it collects.
+	banned    map[engine.CardType]bool // types given up on this round
+	missed    int                      // its own turns in a row without being given the type it collects
+	suspected map[engine.PlayerID]time.Time
+}
+
+// sigSeen is a signal the bot saw, and on which turn.
+type sigSeen struct {
+	gesture string
+	turn    int
 }
 
 func newBrain(id engine.PlayerID) *brain {
-	return &brain{id: id, intents: map[kind]*intent{}, cool: map[kind]time.Time{}}
+	return &brain{
+		id: id, intents: map[kind]*intent{}, cool: map[kind]time.Time{},
+		teamOf: map[engine.PlayerID]engine.TeamID{}, lastSignal: map[engine.PlayerID]int{},
+		recent: map[engine.PlayerID][]sigSeen{}, tells: map[engine.PlayerID]map[string]bool{},
+		tellHit: map[engine.PlayerID]time.Time{}, sudden: map[engine.PlayerID]time.Time{},
+		banned: map[engine.CardType]bool{}, suspected: map[engine.PlayerID]time.Time{},
+	}
 }
 
 // see takes in one message the room sent this bot.
@@ -106,6 +134,7 @@ func (b *brain) see(now time.Time, msg room.Message) {
 			if len(b.heard) > 80 {
 				b.heard = slices.Clone(b.heard[len(b.heard)-60:])
 			}
+			b.noticeSignal(now, m)
 		}
 	case room.TimerStarted:
 		if m.Kind == "proclaim" && m.Player == b.id {
@@ -120,9 +149,73 @@ func (b *brain) see(now time.Time, msg room.Message) {
 		case engine.RoundStarted:
 			b.playStart = now
 			b.nextTick = time.Time{}
+			b.turns = 0
+			b.lastSignal = map[engine.PlayerID]int{}
+		case engine.SuspicionRaised:
+			// One accusation is enough: the others hold off on that player.
+			b.suspected[e.Target] = now
+			if it := b.intents[kSuspect]; it != nil && it.arg == string(e.Target) {
+				delete(b.intents, kSuspect)
+			}
+		case engine.Passed:
+			b.turns++
+			if e.To == b.id {
+				// A turn of its own. The card it was given shows whether the
+				// type it is collecting is coming its way.
+				if b.hasTarget && e.Card == b.target {
+					b.missed = 0
+				} else {
+					b.missed++
+				}
+			} else {
+				b.newHolder = e.To
+			}
+		case engine.RoundWon:
+			b.learnTells(e.Team)
 		case engine.FalseProclaim:
 			if e.By == b.id {
 				b.trusted = nil
+			}
+		}
+	}
+}
+
+// noticeSignal looks at one signal for the two things that make a bot suspicious:
+// a gesture the player used before a win, and a player who has been quiet for
+// five turns suddenly signalling.
+func (b *brain) noticeSignal(now time.Time, s room.Signal) {
+	r := append(b.recent[s.From], sigSeen{gesture: s.Gesture, turn: b.turns})
+	if len(r) > 8 {
+		r = r[len(r)-8:]
+	}
+	b.recent[s.From] = r
+	if b.tells[s.From][s.Gesture] {
+		b.tellHit[s.From] = now
+	}
+	last, signalled := b.lastSignal[s.From]
+	if (signalled && b.turns-last >= 5) || (!signalled && b.turns >= 5) {
+		b.sudden[s.From] = now
+	}
+	b.lastSignal[s.From] = b.turns
+}
+
+// learnTells remembers what each player on the winning team signalled in the
+// last few turns before the win. If one of them signals the same thing again,
+// that is worth a second look.
+func (b *brain) learnTells(team engine.TeamID) {
+	if team == b.myTeam {
+		return
+	}
+	for id, t := range b.teamOf {
+		if t != team || id == b.id {
+			continue
+		}
+		for _, r := range b.recent[id] {
+			if r.turn >= b.turns-3 {
+				if b.tells[id] == nil {
+					b.tells[id] = map[string]bool{}
+				}
+				b.tells[id][r.gesture] = true
 			}
 		}
 	}
@@ -139,6 +232,15 @@ func (b *brain) newRound() {
 	b.suspicions = 0
 	b.hasTarget = false
 	b.nextTick = time.Time{}
+	b.turns = 0
+	b.lastSignal = map[engine.PlayerID]int{}
+	b.recent = map[engine.PlayerID][]sigSeen{}
+	b.tellHit = map[engine.PlayerID]time.Time{}
+	b.sudden = map[engine.PlayerID]time.Time{}
+	b.newHolder = ""
+	b.banned = map[engine.CardType]bool{}
+	b.missed = 0
+	b.suspected = map[engine.PlayerID]time.Time{}
 }
 
 func (b *brain) me(snap room.Snapshot) *room.PlayerInfo {
@@ -180,6 +282,12 @@ func (b *brain) fired(k kind, now time.Time) {
 func (b *brain) plan(now time.Time, snap room.Snapshot, d *Driver) {
 	b.lastNow = now
 	me := b.me(snap)
+	if me != nil {
+		b.myTeam = me.Team
+		for _, p := range snap.Players {
+			b.teamOf[p.ID] = p.Team
+		}
+	}
 	if snap.PausedUntil != nil || me == nil || me.Removed || snap.Game == nil {
 		b.intents = map[kind]*intent{}
 		return
@@ -268,7 +376,9 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 		b.schedule(kProclaim, now.Add(d.respond()), "")
 	}
 
-	// From time to time: maybe bluff, maybe suspect someone.
+	b.considerSuspicion(now, snap, me, d)
+
+	// From time to time: maybe bluff.
 	if b.nextTick.IsZero() {
 		b.nextTick = now.Add(d.think(10, 20))
 		if b.playStart.IsZero() {
@@ -281,44 +391,55 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 }
 
 func (b *brain) tick(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *Driver) {
-	g := snap.Game
 	if now.Sub(b.lastSignalAt) > d.think(10, 20) && d.rng.Float64() < 0.3 {
 		b.schedule(kSignal, now.Add(d.respond()), "bluff")
 	}
-	if g.Points[b.id] <= 0 || now.Sub(b.playStart) < d.think(20, 30) || now.Sub(b.lastSuspect) < d.think(25, 40) {
-		return
-	}
-	target, repeats := b.mostSuspicious(now, snap, me, d)
-	if target == "" {
-		return
-	}
-	// A suspicion only catches someone holding four of a kind, so spend one on
-	// a real tell: an opponent who keeps repeating the same gesture, which is
-	// what a team's "I have four" looks like when it is sent again. Otherwise
-	// only now and then, and keep a point back.
-	var p float64
-	switch {
-	case repeats >= 3:
-		p = 0.8
-	case repeats == 2:
-		p = 0.5
-	case b.suspicions < 1:
-		p = 0.03
-	}
-	if b.suspicions >= 2 && repeats < 3 {
-		p = 0
-	}
-	if p > 0 && d.rng.Float64() < p {
-		b.schedule(kSuspect, now.Add(d.respond()), string(target))
-	}
 }
 
-// mostSuspicious is the opponent who has repeated one gesture most often in the
-// last minute, among the signals the whole table could see, and how many times.
-func (b *brain) mostSuspicious(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *Driver) (engine.PlayerID, int) {
+// What makes a bot suspect someone, and how likely it is to act on it. Each
+// reason is looked at once, when it happens, and then used up.
+const (
+	chanceHolder = 0.10 // someone has just been given the passing card: the chance for the whole table
+	chanceSudden = 0.40 // someone quiet for 5 turns started signalling
+	chanceRepeat = 0.50 // someone sent the same gesture twice lately...
+	chanceMany   = 0.80 // ...or three times or more
+	chanceTell   = 0.70 // someone used a gesture they used before winning a round
+
+	// chanceIgnore is how often a bot lets a reason go by without acting on it,
+	// whatever the reason, so it does not suspect every time.
+	chanceIgnore = 0.40
+)
+
+// holderChance is a bot's own share of the 10% chance that a pass of the card
+// makes someone at the table suspicious. Every bot on another team than the
+// holder rolls for it, so each takes its share and the table as a whole acts
+// on about one pass in ten, however many bots there are.
+func holderChance(snap room.Snapshot, holder engine.PlayerID) float64 {
+	var team engine.TeamID
+	for _, p := range snap.Players {
+		if p.ID == holder {
+			team = p.Team
+		}
+	}
+	n := 0
+	for _, p := range snap.Players {
+		if p.Bot && !p.Removed && p.Team != team {
+			n++
+		}
+	}
+	return chanceHolder / float64(max(n, 1))
+}
+
+// suspicionTrigger finds the opponent the bot has most reason to suspect right
+// now and the chance it acts on it. It looks only at opponents: never the bot's
+// own partner or team, and never someone who is already answering a suspicion.
+func (b *brain) suspicionTrigger(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *Driver) (engine.PlayerID, float64) {
 	opp := map[engine.PlayerID]bool{}
 	for _, p := range snap.Players {
-		if !p.Removed && p.Team != me.Team && p.ID != b.id && !slices.Contains(snap.Game.PendingReveals, p.ID) {
+		if at, was := b.suspected[p.ID]; was && now.Sub(at) < time.Minute {
+			continue // someone has just suspected them
+		}
+		if !p.Removed && p.Team != me.Team && p.ID != b.id && !slices.Contains(snap.Game.PendingReveals, p.ID) && snap.Game.ForcedPass != p.ID {
 			opp[p.ID] = true
 		}
 	}
@@ -327,24 +448,44 @@ func (b *brain) mostSuspicious(now time.Time, snap room.Snapshot, me *room.Playe
 		g   string
 	}
 	seen := map[pair]int{}
-	score := map[engine.PlayerID]int{}
+	repeats := map[engine.PlayerID]int{}
 	for _, h := range b.heard {
 		if opp[h.from] && h.scope == "room" && now.Sub(h.at) < 60*time.Second {
 			k := pair{h.from, h.gesture}
 			seen[k]++
-			score[h.from] = max(score[h.from], seen[k])
+			repeats[h.from] = max(repeats[h.from], seen[k])
 		}
 	}
+	recent := func(m map[engine.PlayerID]time.Time, id engine.PlayerID) bool {
+		at, ok := m[id]
+		return ok && now.Sub(at) < 2*time.Minute
+	}
 	var best []engine.PlayerID
-	top := -1
+	top := 0.0
 	for _, id := range snap.Game.Seats {
 		if !opp[id] {
 			continue
 		}
-		switch s := score[id]; {
-		case s > top:
-			top, best = s, []engine.PlayerID{id}
-		case s == top:
+		p := 0.0
+		switch {
+		case repeats[id] >= 3:
+			p = chanceMany
+		case repeats[id] == 2:
+			p = chanceRepeat
+		}
+		if recent(b.tellHit, id) {
+			p = max(p, chanceTell)
+		}
+		if recent(b.sudden, id) {
+			p = max(p, chanceSudden)
+		}
+		if b.newHolder == id {
+			p = max(p, holderChance(snap, id))
+		}
+		switch {
+		case p > top:
+			top, best = p, []engine.PlayerID{id}
+		case p == top && p > 0:
 			best = append(best, id)
 		}
 	}
@@ -354,23 +495,72 @@ func (b *brain) mostSuspicious(now time.Time, snap room.Snapshot, me *room.Playe
 	return best[d.rng.IntN(len(best))], top
 }
 
-// updateTarget picks which card type to collect: the one held most, keeping the
-// current choice while it is still among the most held.
-func (b *brain) updateTarget(h engine.Hand, d *Driver) {
-	most := 0
-	for _, c := range h {
-		most = max(most, c)
+// considerSuspicion rolls the dice on whatever has made the bot suspicious
+// since it last looked, then forgets those reasons.
+func (b *brain) considerSuspicion(now time.Time, snap room.Snapshot, me *room.PlayerInfo, d *Driver) {
+	g := snap.Game
+	if _, planned := b.intents[kSuspect]; planned {
+		return
 	}
-	if b.hasTarget && h[b.target] == most {
+	target, p := b.suspicionTrigger(now, snap, me, d)
+	b.newHolder = ""
+	b.tellHit = map[engine.PlayerID]time.Time{}
+	b.sudden = map[engine.PlayerID]time.Time{}
+	if target == "" || g.Points[b.id] <= 0 || now.Sub(b.playStart) < d.think(25, 25) || now.Sub(b.lastSuspect) < d.think(25, 40) {
+		return
+	}
+	// Keep a point back unless there is real cause.
+	if b.suspicions >= 2 && p < chanceTell {
+		return
+	}
+	if d.rng.Float64() < chanceIgnore {
+		return
+	}
+	if d.rng.Float64() < p {
+		b.schedule(kSuspect, now.Add(d.respond()+d.think(0, 4)), string(target)) // a little extra randomness after the tell
+	}
+}
+
+// updateTarget picks which card type to collect: the one held most, keeping the
+// current choice while it is still the best. Partners may collect the same
+// type. A bot that has had three turns of its own without being given a card
+// of the type it is collecting gives that type up for the rest of the round and
+// collects something else; choosePass then lets the old stack go first.
+func (b *brain) updateTarget(h engine.Hand, d *Driver) {
+	if b.hasTarget && b.missed >= 3 && h[b.target] < 4 {
+		b.banned[b.target] = true
+		b.hasTarget = false
+		b.missed = 0
+		if len(b.banned) >= engine.NumTypes-1 {
+			b.banned = map[engine.CardType]bool{}
+		}
+	}
+	most := -1
+	for t, c := range h {
+		if !b.banned[engine.CardType(t)] {
+			most = max(most, c)
+		}
+	}
+	if b.hasTarget && !b.banned[b.target] && h[b.target] == most {
 		return
 	}
 	var top []engine.CardType
 	for t, c := range h {
-		if c == most {
+		if !b.banned[engine.CardType(t)] && c == most {
 			top = append(top, engine.CardType(t))
 		}
 	}
-	b.target, b.hasTarget = top[d.rng.IntN(len(top))], true
+	if len(top) == 0 { // everything is ruled out: start again
+		b.banned = map[engine.CardType]bool{}
+		for t := range h {
+			top = append(top, engine.CardType(t))
+		}
+	}
+	next := top[d.rng.IntN(len(top))]
+	if b.hasTarget && next != b.target {
+		b.missed = 0 // a new plan starts from scratch
+	}
+	b.target, b.hasTarget = next, true
 }
 
 // build turns an intent that has come due into an input, if it still makes
@@ -404,7 +594,7 @@ func (b *brain) build(k kind, it *intent, now time.Time, snap room.Snapshot, d *
 		if hand.Total() != 5 || slices.Contains(g.PendingReveals, b.id) || (g.Holder != b.id && g.ForcedPass != b.id) {
 			return nil, false
 		}
-		return room.Pass{Card: choosePass(hand, b.target, d)}, true
+		return room.Pass{Card: choosePass(hand, b.target, b.banned, d)}, true
 	case kReveal:
 		if !slices.Contains(g.PendingReveals, b.id) {
 			return nil, false
@@ -454,9 +644,19 @@ func (b *brain) build(k kind, it *intent, now time.Time, snap room.Snapshot, d *
 	return nil, false
 }
 
-// choosePass gives away the card it wants least: not the type it is
-// collecting, and of the others the one it holds fewest of.
-func choosePass(h engine.Hand, target engine.CardType, d *Driver) engine.CardType {
+// choosePass gives away the card it wants least: a type it has given up on
+// first, then not the type it is collecting, and of the others the one it holds
+// fewest of.
+func choosePass(h engine.Hand, target engine.CardType, banned map[engine.CardType]bool, d *Driver) engine.CardType {
+	var old []engine.CardType
+	for t, c := range h {
+		if c > 0 && banned[engine.CardType(t)] && engine.CardType(t) != target {
+			old = append(old, engine.CardType(t))
+		}
+	}
+	if len(old) > 0 {
+		return old[d.rng.IntN(len(old))]
+	}
 	best := -1
 	var cands []engine.CardType
 	for t, c := range h {

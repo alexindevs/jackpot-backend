@@ -55,11 +55,16 @@ Short forms such as "Tope", "Ify" or "Dede" can be the display name. Open questi
 A starting design. Every number below is a config value to tune.
 
 1. **Ready.** In the pre-round team chat, post to the team (below), then click Ready after a short pause.
-2. **Pass.** Pick the card type it is collecting (the one it holds most of, with random tie-breaks) and pass the type it holds fewest of. This is the same idea as the server's own auto-pass, with a bit of variety. Pass within a few seconds to 20 seconds, well inside the 60 second hold timer.
+2. **Pass.** Pick the card type it is collecting (the one it holds most of, with random tie-breaks) and pass the type it holds fewest of. Partners may collect the same type. If three of its own turns go by without being given a card of the type it is collecting, it gives that type up for the round, passes that stack first and collects something else. This is the same idea as the server's own auto-pass, with a bit of variety. Pass within a few seconds to 20 seconds, well inside the 60 second hold timer.
 3. **Reveal and forced pass.** When suspected, show the least revealing cards, as the server does when a human times out. Answer prompts within the 30 second window.
 4. **Signal.** Send real signals following the team's code, and occasional fake signals to bait opponents into wasting suspicion. Respect the signal rate limit with room to spare.
 5. **Proclaim.** Call Jackpot for the partner when the code says the partner has four of a kind, the partner is not holding the passing card, and the bot is not locked out. Never call on a hunch: a false call costs a point, and a second one at 0 points costs three minutes.
-6. **Suspect.** Spend suspicion points sparingly (3 per round). Early heuristics: someone who has held the passing card several times in a row, someone whose signals repeat, and a small random chance. Never suspect its own partner.
+6. **Suspect.** A bot suspects opponents, human or bot alike, and never its own partner or team. It spends at most about 2 of its 3 points a round (more only on a strong tell), and each reason below is looked at once, when it happens, then used up:
+   - **The same gesture again.** An opponent who sends the same gesture twice in a minute (50% chance to act), or three times or more (80%).
+   - **A gesture they won with.** An opponent who sends a gesture they sent in the turns just before their team won an earlier round (70%). A bot only learns this from rounds already played in this game.
+   - **A sudden start.** An opponent who has not signalled for 5 turns (a turn is one pass of the card), or at all this round once 5 turns have passed, and then does (40%).
+   - **The passing card.** About one pass in ten makes someone at the table suspect whoever just got the card: a 10% chance for the table, shared between the bots on the other team, so it does not grow with the number of bots.
+   - **Not every time.** Whatever the reason, a bot lets it go by 40% of the time. The bots take turns in a random order and wait a little extra after the reason, and two of them never suspect the same player at once.
 7. **Timing.** Never act instantly. A bot takes a random **5 to 37 seconds** to do anything (the author's choice), except for questions the server only waits 30 seconds for (what to show when suspected, which card to give up after being caught), where it answers within 5 to 25 seconds. It signals that it is ready only after it has posted its code, so a person can read it first. Two bots never act at the same moment.
 8. **Chat.** Light, rare public-chat lines, in a natural voice. Off by default; the team chat is the one that matters.
 

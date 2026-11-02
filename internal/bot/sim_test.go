@@ -3,6 +3,8 @@ package bot
 import (
 	"fmt"
 	"math/rand/v2"
+	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -117,6 +119,9 @@ func TestBotsPlayWholeGamesToTheEnd(t *testing.T) {
 	games := 30
 	if testing.Short() {
 		games = 6
+	}
+	if n, err := strconv.Atoi(os.Getenv("JACKPOT_SIM_GAMES")); err == nil && n > 0 {
+		games = n // for a long soak: JACKPOT_SIM_GAMES=300 go test ./internal/bot
 	}
 	var rounds, falseCalls, suspicions, caught, signals int
 	var elapsed time.Duration
