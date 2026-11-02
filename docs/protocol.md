@@ -49,7 +49,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `proclaim` | | |
 | `vote_end` | `agree` (bool) | vote to end the game early. Sending the vote you already have is answered `ok` and ignored: nothing changes, nothing is announced and nothing is saved |
 
-Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`.
+Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
 
 A rejected request changes nothing and sends nothing else.
 
