@@ -8,11 +8,13 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -73,7 +75,7 @@ func TestMigrateIsIdempotentAndSafeToRunTwiceAtOnce(t *testing.T) {
 		}
 	}
 	var n int
-	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 4 {
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM schema_migrations`).Scan(&n); err != nil || n != 5 {
 		t.Errorf("migrations recorded: %d, %v", n, err)
 	}
 }
@@ -451,5 +453,94 @@ func TestGamesWithBotsStayOffTheLeaderboardsAndBotsHaveNames(t *testing.T) {
 		if p.Player.ID == "bot:garba" && p.Player.Name != "Garba" {
 			t.Errorf("a bot should show its name, got %q", p.Player.Name)
 		}
+	}
+}
+
+func TestFinishedGamesListTheCallersGamesNewestFirst(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	_ = s.UpsertPlayer(ctx, Player{ID: "alice", Name: "Alice"})
+	teams := [][2]string{{"alice", "bob"}, {"cara", "bot:garba"}}
+	rounds := func(wins ...int) []RoundSummary {
+		var rs []RoundSummary
+		for i, team := range wins {
+			rs = append(rs, RoundSummary{Round: i + 1, Team: team, Proclaimer: PlayerRef{ID: "alice"}, Holder: PlayerRef{ID: "bob"}})
+		}
+		return rs
+	}
+	play(t, s, teams, rounds(0, 0, 1, 0), &Outcome{Reason: "wins", WinnerTeam: 0, CountsForStats: true, Rounds: 5})
+	lost := play(t, s, teams, rounds(1, 1, 1, 1), &Outcome{Reason: "wins", WinnerTeam: 1, CountsForStats: true})
+	_ = s.SaveSetup(ctx, lost, "alice", engine.Setup{Config: engine.Config{WinsToFinish: 4}})
+	play(t, s, teams, rounds(0), &Outcome{Reason: "agreement", Draw: true, CountsForStats: true})
+	play(t, s, teams, rounds(0, 1), &Outcome{Reason: "forfeit", WinnerTeam: 1})
+	play(t, s, [][2]string{{"x", "y"}, {"z", "w"}}, rounds(0), &Outcome{Reason: "wins", WinnerTeam: 0, CountsForStats: true}) // not alice's
+	play(t, s, teams, rounds(0), nil)                                                                                         // still going
+	abandoned := play(t, s, teams, nil, nil)
+	_ = s.AbandonGame(ctx, abandoned, t0)
+
+	got, err := s.FinishedGames(ctx, "alice", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var outcomes, reasons []string
+	for _, g := range got {
+		outcomes = append(outcomes, g.Outcome)
+		reasons = append(reasons, g.Reason)
+	}
+	if !reflect.DeepEqual(outcomes, []string{"lost", "draw", "lost", "won"}) || !reflect.DeepEqual(reasons, []string{"forfeit", "agreement", "normal", "normal"}) {
+		t.Fatalf("outcomes %v reasons %v: only her finished games, newest first", outcomes, reasons)
+	}
+
+	w := got[3] // the first game: she won
+	if w.WinsToFinish != 7 || w.Round != 5 || !w.CountsForStats || w.Room == "" || !w.FinishedAt.Equal(t0.Add(time.Hour)) {
+		t.Errorf("game = %+v", w)
+	}
+	if len(w.Teams) != 2 || !w.Teams[0].Mine || w.Teams[1].Mine || w.Teams[0].Wins != 3 || w.Teams[1].Wins != 1 {
+		t.Fatalf("teams = %+v", w.Teams)
+	}
+	if !reflect.DeepEqual(w.Teams[0].Names, []string{"Alice", "bob"}) || !reflect.DeepEqual(w.Teams[1].Names, []string{"Garba", "cara"}) && !reflect.DeepEqual(w.Teams[1].Names, []string{"cara", "Garba"}) {
+		t.Errorf("names = %+v: a known player by name, an unknown one by id, a bot by its own name", w.Teams)
+	}
+	if l := got[2]; l.WinsToFinish != 4 || l.Round != 4 {
+		t.Errorf("a game saved with a short setup is 4 wins, and with no round count falls back to its rounds: %+v", l)
+	}
+
+	two, _ := s.FinishedGames(ctx, "alice", 2)
+	if len(two) != 2 || two[0].Outcome != "lost" {
+		t.Errorf("limit 2 gave %d games", len(two))
+	}
+	if none, err := s.FinishedGames(ctx, "nobody", 20); err != nil || none == nil || len(none) != 0 {
+		t.Errorf("someone with no games gets an empty list, not null: %v %v", none, err)
+	}
+}
+
+// The migration fills in games that already exist from what they kept.
+func TestTheHistoryMigrationBackfillsOlderGames(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	id := play(t, s, [][2]string{{"a", "b"}, {"c", "d"}}, []RoundSummary{
+		{Round: 1, Team: 0, Proclaimer: PlayerRef{ID: "a"}, Holder: PlayerRef{ID: "b"}},
+		{Round: 2, Team: 0, Proclaimer: PlayerRef{ID: "a"}, Holder: PlayerRef{ID: "b"}},
+	}, nil)
+	if _, err := s.pool.Exec(ctx, `UPDATE games SET setup = '{"Config":{"WinsToFinish":4}}', wins_to_finish = 7, rounds_played = 0 WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	sql, err := migrationFiles.ReadFile("migrations/0005_finished_history.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range strings.Split(string(sql), ";") {
+		if i := strings.Index(stmt, "UPDATE"); i >= 0 {
+			if _, err := s.pool.Exec(ctx, stmt[i:]); err != nil {
+				t.Fatalf("%s: %v", stmt[i:], err)
+			}
+		}
+	}
+	var wins, rounds int
+	if err := s.pool.QueryRow(ctx, `SELECT wins_to_finish, rounds_played FROM games WHERE id = $1`, id).Scan(&wins, &rounds); err != nil {
+		t.Fatal(err)
+	}
+	if wins != 4 || rounds != 2 {
+		t.Errorf("backfilled %d wins to finish and %d rounds, want 4 and 2", wins, rounds)
 	}
 }

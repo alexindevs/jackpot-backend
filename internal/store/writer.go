@@ -260,7 +260,9 @@ func (w *Writer) handle(item any) {
 			if v.Abandoned || v.Result == nil {
 				return w.s.AbandonGame(ctx, id, v.At)
 			}
-			return w.s.FinishGame(ctx, id, v.At, outcome(*v.Result))
+			o := outcome(*v.Result)
+			o.Rounds = v.Round
+			return w.s.FinishGame(ctx, id, v.At, o)
 		})
 		w.mu.Lock()
 		delete(w.games, v.Room)

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/alexindevs/jackpot-backend/internal/api"
+	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/live"
 	"github.com/alexindevs/jackpot-backend/internal/room"
 	"github.com/alexindevs/jackpot-backend/internal/store"
@@ -149,6 +150,7 @@ func run(log *slog.Logger) error {
 		OriginPatterns: origins,
 		OnSignIn:       onSignIn,
 		Log:            log,
+		History:        history(db),
 	})
 	if db != nil {
 		if err := live.Restore(ctx, db, m, writer, log); err != nil {
@@ -196,4 +198,14 @@ func run(log *slog.Logger) error {
 		}
 	}
 	return result
+}
+
+// history answers the finished_games request from the database, if there is one.
+func history(db *store.Store) func(context.Context, engine.PlayerID) (any, error) {
+	if db == nil {
+		return nil
+	}
+	return func(ctx context.Context, player engine.PlayerID) (any, error) {
+		return db.FinishedGames(ctx, string(player), 20)
+	}
 }

@@ -51,7 +51,7 @@ func (s *Store) SaveSetup(ctx context.Context, gameID int64, creator string, su 
 	if err != nil {
 		return err
 	}
-	_, err = s.pool.Exec(ctx, `UPDATE games SET creator = $2, setup = $3 WHERE id = $1`, gameID, creator, b)
+	_, err = s.pool.Exec(ctx, `UPDATE games SET creator = $2, setup = $3, wins_to_finish = $4 WHERE id = $1`, gameID, creator, b, su.Config.WinsToFinish)
 	return err
 }
 

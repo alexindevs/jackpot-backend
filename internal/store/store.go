@@ -182,6 +182,7 @@ type Outcome struct {
 	WinnerTeam     int    // ignored when Draw
 	Draw           bool
 	CountsForStats bool
+	Rounds         int // the last round played
 }
 
 func (s *Store) FinishGame(ctx context.Context, gameID int64, at time.Time, o Outcome) error {
@@ -190,8 +191,9 @@ func (s *Store) FinishGame(ctx context.Context, gameID int64, at time.Time, o Ou
 		winner = &o.WinnerTeam
 	}
 	_, err := s.pool.Exec(ctx, `
-		UPDATE games SET status = 'finished', ended_at = $2, end_reason = $3, winner_team = $4, draw = $5, counts_for_stats = $6
-		WHERE id = $1`, gameID, at, o.Reason, winner, o.Draw, o.CountsForStats)
+		UPDATE games SET status = 'finished', ended_at = $2, end_reason = $3, winner_team = $4, draw = $5, counts_for_stats = $6,
+		       rounds_played = GREATEST($7, rounds_played)
+		WHERE id = $1`, gameID, at, o.Reason, winner, o.Draw, o.CountsForStats, o.Rounds)
 	return err
 }
 

@@ -47,6 +47,7 @@ type GameFinished struct {
 	At        time.Time
 	Result    *engine.Result
 	Abandoned bool
+	Round     int // the last round played
 }
 
 // ChatPosted is a line of public chat, to be kept for a day. Seq is the

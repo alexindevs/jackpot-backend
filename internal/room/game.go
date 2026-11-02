@@ -202,7 +202,7 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 			r.record(RoundWon{Room: r.id, At: now, Round: r.game.Round(), Team: e.Team, Proclaimer: e.Proclaimer, Holder: e.Holder})
 		case engine.GameOver:
 			res := e.Result
-			r.record(GameFinished{Room: r.id, At: now, Result: &res})
+			r.record(GameFinished{Room: r.id, At: now, Result: &res, Round: r.game.Round()})
 		}
 		if ta, ok := ev.(engine.TeamAdded); ok {
 			r.teamAdded(now, ta)

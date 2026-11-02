@@ -188,7 +188,7 @@ var errCodes = []struct {
 	{room.ErrWrongPhase, "wrong_phase"}, {room.ErrBadText, "bad_text"},
 	{room.ErrBadGesture, "bad_gesture"}, {room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
 	{room.ErrUnpairedPlayers, "unpaired_players"},
-	{room.ErrNothingToAdd, "nothing_to_add"}, {room.ErrNotABot, "not_a_bot"},
+	{errHistoryUnavailable, "history_unavailable"}, {room.ErrNothingToAdd, "nothing_to_add"}, {room.ErrNotABot, "not_a_bot"},
 	{engine.ErrNotHolder, "not_holder"}, {engine.ErrNoSuchCard, "no_such_card"},
 	{engine.ErrSelfSuspect, "self_suspect"}, {engine.ErrNoPoints, "no_points"},
 	{engine.ErrBusy, "busy"}, {engine.ErrNoPending, "nothing_to_answer"},

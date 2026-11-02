@@ -264,6 +264,8 @@ func (m *Manager) process(c *conn, in inbound) reply {
 		return okOrError(m.Leave(user))
 	case "my_games":
 		return reply{t: "my_games", d: m.MyGames(user)}
+	case "finished_games":
+		return m.finishedGames(user)
 	case "resume_game":
 		return okOrError(m.ResumeGame(user, in.Room))
 	}

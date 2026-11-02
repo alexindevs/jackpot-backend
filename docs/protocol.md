@@ -30,6 +30,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `list_rooms` | | replies `rooms` |
 | `signal` | `gesture` | send a gesture (an `id` from the snapshot's `gestures`); only during a round |
 | `my_games` | | replies `my_games`: your paused games (below) |
+| `finished_games` | | replies `finished_games`: the caller's last 20 games that ran to the end, newest first (below). Needs the database; without one the list is empty. Error `history_unavailable` if the database fails |
 | `resume_game` | `room` | go back into one of your paused games |
 | `resume` | `after` | after reconnecting: replays what you missed (see below). `after` is the last `s` you saw, or 0 |
 | `create_room` | `short` (bool, optional) | replies `room_created`; you are in the room. `short: true` makes a short game (4 round wins, spelling J-A-C-K); leave it out for the usual long game (7 wins, J-A-C-K-P-O-T) |
@@ -51,7 +52,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `proclaim` | | |
 | `vote_end` | `agree` (bool) | vote to end the game early. Sending the vote you already have is answered `ok` and ignored: nothing changes, nothing is announced and nothing is saved |
 
-Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `nothing_to_add`, `not_a_bot`, `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
+Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `history_unavailable`, `nothing_to_add`, `not_a_bot`, `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
 
 A rejected request changes nothing and sends nothing else.
 
@@ -154,3 +155,20 @@ It returns the lines numbered above `after` (see `docs/api.md`). Stop polling wh
 ## Limits
 
 Messages are capped at 8 KB. A client may send about 20 messages a second (bursts of 40); beyond that the connection is closed. A client that stops reading is disconnected rather than waited for.
+
+## Finished games
+
+`finished_games` replies `{"t":"finished_games","d":[...]}`, newest first, at most 20, only games the caller played in as a player that reached game over (wins, agreement or forfeit; abandoned games are left out). Each item:
+
+```json
+{"room":"abc123","outcome":"won","reason":"normal","round":9,"finishedAt":"2026-11-02T19:12:00Z",
+ "winsToFinish":7,"countsForStats":true,
+ "teams":[{"names":["Ada","Tobi"],"wins":7,"mine":true},{"names":["Zainab","Ife"],"wins":4,"mine":false}]}
+```
+
+- `outcome` is `won`, `lost` or `draw` for the caller's team. `reason` is `normal` (a team reached the wins), `agreement` or `forfeit`.
+- `round` is the last round played. `winsToFinish` is 7 (long) or 4 (short). Games saved before this existed show 7 unless their setup was still kept.
+- `teams` lists every team that was in the game, in team order, with the rounds it won and `mine` for the caller's. A team that joined late is listed once; a player who came back after their team was removed is listed under their latest team. Names are the players' current names, a bot shows its own name, and someone with no saved profile shows their id.
+- `countsForStats` is false for forfeits and for any game with a bot in it.
+- The game's length and round count are kept on the game's own row, so the list survives the 24 hour cleanup of setup data.
+

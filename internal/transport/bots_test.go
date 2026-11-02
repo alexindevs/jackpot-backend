@@ -1,9 +1,13 @@
 package transport
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/alexindevs/jackpot-backend/internal/engine"
 )
 
 func openLobby(t *testing.T) (*client, string) {
@@ -143,5 +147,43 @@ func TestAPersonPlaysARoundAgainstBotsOverTheWire(t *testing.T) {
 	}
 	if bots != 3 {
 		t.Errorf("the snapshot marks %d bots, want 3", bots)
+	}
+}
+
+func TestFinishedGamesAnswersLikeMyGames(t *testing.T) {
+	var asked []string
+	_, url := newTestServer(t, func(c *Config) {
+		c.History = func(_ context.Context, p engine.PlayerID) (any, error) {
+			asked = append(asked, string(p))
+			return []map[string]any{{"room": "abc123", "outcome": "won"}}, nil
+		}
+	})
+	a := dial(t, url, "alice")
+	a.wait("hello", isT("hello"))
+	r := a.request(msg{"type": "finished_games"})
+	list, _ := r["d"].([]any)
+	if r["t"] != "finished_games" || len(list) != 1 || list[0].(map[string]any)["room"] != "abc123" {
+		t.Fatalf("reply = %v", r)
+	}
+	if len(asked) != 1 || asked[0] != "alice" {
+		t.Errorf("it must ask for the signed-in player's games, not anyone's: %v", asked)
+	}
+}
+
+func TestFinishedGamesWithoutADatabaseIsEmptyAndAFailureIsAnError(t *testing.T) {
+	_, url := newTestServer(t, nil)
+	a := dial(t, url, "alice")
+	a.wait("hello", isT("hello"))
+	r := a.request(msg{"type": "finished_games"})
+	if list, ok := r["d"].([]any); r["t"] != "finished_games" || !ok || len(list) != 0 {
+		t.Errorf("without a database: %v", r)
+	}
+	_, url2 := newTestServer(t, func(c *Config) {
+		c.History = func(context.Context, engine.PlayerID) (any, error) { return nil, errors.New("down") }
+	})
+	b := dial(t, url2, "bob")
+	b.wait("hello", isT("hello"))
+	if r := b.request(msg{"type": "finished_games"}); data(r)["code"] != "history_unavailable" {
+		t.Errorf("a failing database: %v", r)
 	}
 }

@@ -62,6 +62,11 @@ type Config struct {
 	AuthTimeout  time.Duration // how long a new socket has to authenticate
 	SendQueue    int           // per-connection outgoing queue; a full queue drops the connection
 	MaxReadBytes int64
+	// History lists a player's finished games for the finished_games request. It
+	// is nil when there is no database, and the request then answers with an
+	// empty list.
+	History func(ctx context.Context, player engine.PlayerID) (any, error)
+
 	// BotSpeed scales how fast bots think; 1, the default, is a person's pace.
 	BotSpeed float64
 
