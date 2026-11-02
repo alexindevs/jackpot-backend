@@ -436,7 +436,7 @@ func givenCard(b *brain, now time.Time, card engine.CardType) {
 	b.see(now, room.GameEvent{Event: engine.Passed{From: rivalB, To: me, Card: card}})
 }
 
-func TestABotGivesUpAHoardAfterThreeOfItsTurnsWithoutBeingGivenThatType(t *testing.T) {
+func TestABotGivesUpAHoardAfterFourOfItsTurnsWithoutBeingGivenThatType(t *testing.T) {
 	d, b, now := newTest()
 	hand := engine.Hand{3, 1, 0, 0}
 	b.updateTarget(hand, d)
@@ -445,21 +445,23 @@ func TestABotGivesUpAHoardAfterThreeOfItsTurnsWithoutBeingGivenThatType(t *testi
 	}
 	givenCard(b, now, 1) // turn 1: not what it collects
 	givenCard(b, now, 3) // turn 2
+	givenCard(b, now, 2) // turn 3
 	b.updateTarget(hand, d)
 	if b.target != 0 {
-		t.Fatal("two turns is not long enough to give up")
+		t.Fatal("three turns is not long enough to give up")
 	}
 	givenCard(b, now, 0) // it is given what it collects: the count starts again
 	givenCard(b, now, 1)
 	givenCard(b, now, 2)
+	givenCard(b, now, 3)
 	b.updateTarget(hand, d)
 	if b.target != 0 {
-		t.Fatal("two turns since it was last given its type is still not enough")
+		t.Fatal("three turns since it was last given its type is still not enough")
 	}
-	givenCard(b, now, 3) // the third turn in a row
+	givenCard(b, now, 1) // the fourth turn in a row
 	b.updateTarget(hand, d)
 	if b.target == 0 || !b.banned[0] {
-		t.Fatalf("after three turns it must collect something else, still %d", b.target)
+		t.Fatalf("after four turns it must collect something else, still %d", b.target)
 	}
 	// It lets the old stack go first, and never goes back to it this round.
 	for i := 0; i < 30; i++ {

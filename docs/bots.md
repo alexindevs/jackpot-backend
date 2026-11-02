@@ -55,7 +55,7 @@ Short forms such as "Tope", "Ify" or "Dede" can be the display name. Open questi
 A starting design. Every number below is a config value to tune.
 
 1. **Ready.** In the pre-round team chat, post to the team (below), then click Ready after a short pause.
-2. **Pass.** Pick the card type it is collecting (the one it holds most of, with random tie-breaks) and pass the type it holds fewest of. Partners may collect the same type. If three of its own turns go by without being given a card of the type it is collecting, it gives that type up for the round, passes that stack first and collects something else. This is the same idea as the server's own auto-pass, with a bit of variety. Pass within a few seconds to 20 seconds, well inside the 60 second hold timer.
+2. **Pass.** Pick the card type it is collecting (the one it holds most of, with random tie-breaks) and pass the type it holds fewest of. Partners may collect the same type. If four of its own turns go by without being given a card of the type it is collecting, it gives that type up for the round, passes that stack first and collects something else. This is the same idea as the server's own auto-pass, with a bit of variety. Pass within a few seconds to 20 seconds, well inside the 60 second hold timer.
 3. **Reveal and forced pass.** When suspected, show the least revealing cards, as the server does when a human times out. Answer prompts within the 30 second window.
 4. **Signal.** Send real signals following the team's code, and occasional fake signals to bait opponents into wasting suspicion. Respect the signal rate limit with room to spare.
 5. **Proclaim.** Call Jackpot for the partner when the code says the partner has four of a kind, the partner is not holding the passing card, and the bot is not locked out. Never call on a hunch: a false call costs a point, and a second one at 0 points costs three minutes. It calls 5 to 15 seconds after its partner's signal, not sooner.
@@ -83,6 +83,13 @@ The game is about partners telling each other things through signals, and 80% of
 ### Difficulty
 
 Start with one level. A second level (sharper suspicion, better bluffing, less predictable codes) can follow once there is something to compare against.
+
+### Speed of a round, and one idea that did not help
+
+Measured in the simulation (120 games, bots at 5 to 15 seconds a move): a round is about 31 passes and 6 minutes. Almost all of it is collecting. In a 60-game run the first four of a kind appeared after 26 passes on average, and the rest of the round (signal, call) took only about 4.
+
+- **Giving up a hoard sooner is slower.** Dropping a type after 3 of the bot's own turns without being given it cost about a quarter: 36 passes before the first four of a kind, against 26 with 4 turns. Waiting 4, 5, 6 or 8 turns made no difference, so the rule is 4. Never giving up was as fast, but it is the case that deadlocked before.
+- **Idea not kept: follow the supply.** Choose what to collect from what is held plus the types the bot was recently given (the player upstream passes what they do not want). It took a round from 41.6 passes to 40.7, which is noise, so it was dropped. It could be tried again with a different weighting if rounds ever feel slow again; the simulation reports passes per round to measure it.
 
 ## Rules for the rest of the system
 

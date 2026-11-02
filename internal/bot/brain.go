@@ -529,11 +529,11 @@ func (b *brain) considerSuspicion(now time.Time, snap room.Snapshot, me *room.Pl
 
 // updateTarget picks which card type to collect: the one held most, keeping the
 // current choice while it is still the best. Partners may collect the same
-// type. A bot that has had three turns of its own without being given a card
+// type. A bot that has had four turns of its own without being given a card
 // of the type it is collecting gives that type up for the rest of the round and
 // collects something else; choosePass then lets the old stack go first.
 func (b *brain) updateTarget(h engine.Hand, d *Driver) {
-	if b.hasTarget && b.missed >= 3 && h[b.target] < 4 {
+	if b.hasTarget && b.missed >= 4 && h[b.target] < 4 {
 		b.banned[b.target] = true
 		b.hasTarget = false
 		b.missed = 0

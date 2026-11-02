@@ -28,6 +28,7 @@ type simResult struct {
 	countsForStat bool
 	winner        engine.TeamID
 	reason        engine.EndReason
+	passes        int
 }
 
 // playGame plays a whole game with a fake clock. One seat is a "person" who is
@@ -58,6 +59,8 @@ func playGameWith(t *testing.T, seed uint64, botTeams int, short bool, afk bool,
 			switch m := o.Msg.(type) {
 			case room.GameEvent:
 				switch m.Event.(type) {
+				case engine.Passed:
+					res.passes++
 				case engine.RoundWon:
 					res.rounds++
 				case engine.FalseProclaim:
@@ -123,7 +126,7 @@ func TestBotsPlayWholeGamesToTheEnd(t *testing.T) {
 	if n, err := strconv.Atoi(os.Getenv("JACKPOT_SIM_GAMES")); err == nil && n > 0 {
 		games = n // for a long soak: JACKPOT_SIM_GAMES=300 go test ./internal/bot
 	}
-	var rounds, falseCalls, suspicions, caught, signals int
+	var rounds, falseCalls, suspicions, caught, signals, passes int
 	var elapsed time.Duration
 	for seed := uint64(1); seed <= uint64(games); seed++ {
 		botTeams := 1 + int(seed%4) // 2 to 5 teams in all with the person's
@@ -135,12 +138,14 @@ func TestBotsPlayWholeGamesToTheEnd(t *testing.T) {
 			t.Errorf("seed %d: a game with bots must not count toward leaderboards", seed)
 		}
 		rounds += res.rounds
+		passes += res.passes
 		falseCalls += res.falseCalls
 		suspicions += res.suspicions
 		caught += res.caught
 		signals += res.signals
 		elapsed += res.elapsed
 	}
+	t.Logf("%.1f passes and %v per round", float64(passes)/float64(rounds), (elapsed / time.Duration(rounds)).Round(time.Second))
 	t.Logf("%d games: %.1f rounds each, %.1f false calls, %.1f suspicions (%.1f caught someone), %.0f signals seen by the person, %v of game time each",
 		games, float64(rounds)/float64(games), float64(falseCalls)/float64(games), float64(suspicions)/float64(games),
 		float64(caught)/float64(games), float64(signals)/float64(games), (elapsed / time.Duration(games)).Round(time.Second))
