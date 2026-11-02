@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -45,6 +46,39 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// listenAddress picks where to listen. An explicit JACKPOT_ADDR always wins.
+// Otherwise a hosting platform's PORT means all interfaces on that port, and
+// nothing set means :8080. Dev mode lets anyone sign in as anyone, so it
+// listens on this machine only, and refuses to start at all when PORT is set,
+// which is what a hosting platform does: a deploy that carries JACKPOT_DEV=1
+// by mistake stops instead of running open.
+func listenAddress(addr, port string, dev bool) (string, error) {
+	switch {
+	case addr != "":
+		return addr, nil
+	case dev && port != "":
+		return "", errors.New("JACKPOT_DEV=1 is set and so is PORT, which looks like a hosted deploy; dev mode lets anyone sign in as anyone. Unset JACKPOT_DEV, or set JACKPOT_ADDR to listen somewhere on purpose")
+	case dev:
+		return "127.0.0.1:8080", nil
+	case port != "":
+		return ":" + port, nil
+	}
+	return ":8080", nil
+}
+
+// isLoopback reports whether an address listens on this machine only.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := run(log); err != nil {
@@ -55,16 +89,15 @@ func main() {
 
 func run(log *slog.Logger) error {
 	game := env("JACKPOT_GAME", "jackpot")
-	addr := os.Getenv("JACKPOT_ADDR")
-	if addr == "" {
-		if port := os.Getenv("PORT"); port != "" {
-			addr = ":" + port
-		} else {
-			addr = ":8080"
-		}
+	dev := os.Getenv("JACKPOT_DEV") == "1"
+	addr, err := listenAddress(os.Getenv("JACKPOT_ADDR"), os.Getenv("PORT"), dev)
+	if err != nil {
+		return err
+	}
+	if dev && !isLoopback(addr) {
+		log.Warn("JACKPOT_DEV=1 and listening beyond this machine", "addr", addr)
 	}
 	origins := strings.Split(env("JACKPOT_ORIGINS", game+".start.ng"), ",")
-	dev := os.Getenv("JACKPOT_DEV") == "1"
 
 	var auth transport.Authenticator = transport.StartNG{BaseURL: env("JACKPOT_START_NG", "https://api.start.ng"), Game: game}
 	if dev {

@@ -32,7 +32,7 @@ export DATABASE_URL='postgres://jackpot:<password>@127.0.0.1:5432/jackpot?sslmod
 JACKPOT_DEV=1 go run ./cmd/server
 ```
 
-`JACKPOT_DEV=1` lets anyone sign in as `dev:<name>` and allows localhost pages. It is for local testing only. Without `DATABASE_URL` the server still plays games, but nothing is saved and the leaderboard endpoints answer 503.
+`JACKPOT_DEV=1` lets anyone sign in as `dev:<name>` and allows localhost pages. It is for local testing only, so it listens on this machine only (`127.0.0.1:8080`) unless you set `JACKPOT_ADDR`, and the server refuses to start with it if `PORT` is set, which is what a hosting platform does. Without `DATABASE_URL` the server still plays games, but nothing is saved and the leaderboard endpoints answer 503.
 
 The server applies database migrations itself on every start.
 
