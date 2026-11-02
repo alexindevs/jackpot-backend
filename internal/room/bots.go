@@ -204,3 +204,31 @@ func (r *Room) dropBot(id engine.PlayerID) {
 	r.broadcast(MemberLeft{Player: id, Reason: "removed"})
 	r.deleteMember(id)
 }
+
+// breakPartner ends the sender's partnership so both can pair up again. A bot
+// partner goes away, as it does when its person leaves: it was there for them.
+func (r *Room) breakPartner(from engine.PlayerID) error {
+	if r.phase != PhaseLobby {
+		return ErrWrongPhase
+	}
+	m := r.members[from]
+	if m == nil {
+		return ErrNotMember
+	}
+	p := m.partner
+	if p == "" {
+		return ErrNotPaired
+	}
+	if isBot(r.members[p]) {
+		r.dropBot(p)
+		return nil
+	}
+	m.partner, r.members[p].partner = "", ""
+	for k := range r.invites {
+		if k.from == from || k.to == from || k.from == p || k.to == p {
+			delete(r.invites, k)
+		}
+	}
+	r.broadcast(TeamBroken{A: from, B: p})
+	return nil
+}

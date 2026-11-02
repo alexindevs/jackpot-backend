@@ -37,6 +37,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `join` | `room` | become a player in a lobby. In a game that has started, ask to play: you watch while you wait in line, and between rounds the first two in line become a new team (rules section 11a). Works for a watcher already in the room too |
 | `spectate` | `room` | watch |
 | `leave` | | leave the lobby, drop out of a game (instant), or stop watching |
+| `break_partner` | | lobby only. Ends your partnership with `team_broken {a,b}` to the room; you and your ex-partner can then invite and accept new partners, each other included. A bot partner leaves instead (you can add bots again). Errors: `wrong_phase`, `not_paired`, `paused` |
 | `add_bots` | `teams` (number, optional) | creator only, lobby only. Gives every person without a partner a bot partner, then adds teams of bots until there are two teams in all, or `teams` bot teams if you ask for them. Up to 9 bots (10 seats). Errors: `not_creator`, `wrong_phase`, `nothing_to_add`, `room_full` |
 | `remove_bot` | `player` | creator only, lobby only. Removes a bot; a bot partnered with another bot goes with it. Errors: `not_creator`, `wrong_phase`, `not_a_bot` |
 | `start_now` | | creator only; needs 2+ teams and nobody without a partner |
@@ -52,7 +53,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `proclaim` | | |
 | `vote_end` | `agree` (bool) | vote to end the game early. Sending the vote you already have is answered `ok` and ignored: nothing changes, nothing is announced and nothing is saved |
 
-Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `history_unavailable`, `nothing_to_add`, `not_a_bot`, `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
+Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `not_paired`, `history_unavailable`, `nothing_to_add`, `not_a_bot`, `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
 
 A rejected request changes nothing and sends nothing else.
 
@@ -145,7 +146,7 @@ It returns the lines numbered above `after` (see `docs/api.md`). Stop polling wh
 ## Field notes
 
 - `round_won {team, proclaimer, holder, wins, letter}`: `team` is the winning team's id. `wins` is **that team's new total** number of round wins (a number), and `letter` is the letter it earned (`JACKPOT[wins-1]`). The scoreboard in a snapshot, `game.wins`, is a map from team id to count (JSON keys are strings: `{"0":2,"1":1}`).
-- `game_over {result}`: `result.winner` is a team id and means nothing when `result.draw` is true. `result.reason` is `wins`, `agreement` or `forfeit`. `result.wins` is a map from team id to count. `result.countsForStats` is false for a forfeit.
+- `game_over {result}`: `result.winner` is a team id and means nothing when `result.draw` is true. `result.reason` is `wins`, `agreement` or `forfeit`. `result.wins` is a map from team id to count. `result.teams` is a map from team id to the player ids on that team, for every team that played, including teams that were removed and players who have since left (a player who came back after their team was removed is on their newest team). The names and looks of all of them arrive as `profile` messages before the result, even for players who have left; the same `teams` is in the snapshot's `game.result`. `result.countsForStats` is false for a forfeit.
 - `suspicion_raised {by, target, pointsLeft, required}`: `pointsLeft` is the suspector's remaining points, and `required` is how many different types the target must show.
 - `passed {from, to, card, auto}`: `auto` is true when the server passed for a holder who ran out of time (or didn't answer a forced-pass prompt).
 - `false_proclaim {by, pointsLeft, revoked}`: `revoked` is true when `by` was at 0 points, which locks them out of proclaiming for 3 minutes (a `timer_started` of kind `proclaim` follows; `proclaim_restored {player}` says the lockout is over). It also ends at the next round.

@@ -61,6 +61,8 @@ func toInput(in inbound) (room.Input, error) {
 	switch in.Type {
 	case "start_now":
 		return room.StartNow{}, nil
+	case "break_partner":
+		return room.BreakPartner{}, nil
 	case "add_bots":
 		return room.AddBots{Teams: in.Teams}, nil
 	case "remove_bot":
@@ -188,7 +190,7 @@ var errCodes = []struct {
 	{room.ErrWrongPhase, "wrong_phase"}, {room.ErrBadText, "bad_text"},
 	{room.ErrBadGesture, "bad_gesture"}, {room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
 	{room.ErrUnpairedPlayers, "unpaired_players"},
-	{errHistoryUnavailable, "history_unavailable"}, {room.ErrNothingToAdd, "nothing_to_add"}, {room.ErrNotABot, "not_a_bot"},
+	{errHistoryUnavailable, "history_unavailable"}, {room.ErrNotPaired, "not_paired"}, {room.ErrNothingToAdd, "nothing_to_add"}, {room.ErrNotABot, "not_a_bot"},
 	{engine.ErrNotHolder, "not_holder"}, {engine.ErrNoSuchCard, "no_such_card"},
 	{engine.ErrSelfSuspect, "self_suspect"}, {engine.ErrNoPoints, "no_points"},
 	{engine.ErrBusy, "busy"}, {engine.ErrNoPending, "nothing_to_answer"},

@@ -107,6 +107,10 @@ func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 		if res := g.Result(); res != nil {
 			over := *res
 			over.Wins = maps.Clone(res.Wins)
+			over.Teams = make(map[engine.TeamID][]engine.PlayerID, len(res.Teams))
+			for t, ids := range res.Teams {
+				over.Teams[t] = slices.Clone(ids)
+			}
 			gi.Result = &over
 		}
 		for _, id := range gi.Seats {

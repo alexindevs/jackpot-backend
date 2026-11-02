@@ -187,3 +187,57 @@ func TestFinishedGamesWithoutADatabaseIsEmptyAndAFailureIsAnError(t *testing.T) 
 		t.Errorf("a failing database: %v", r)
 	}
 }
+
+func TestBreakPartnerOverTheWire(t *testing.T) {
+	_, url := newTestServer(t, nil)
+	a, b := dial(t, url, "alice"), dial(t, url, "bob")
+	a.wait("hello", isT("hello"))
+	b.wait("hello", isT("hello"))
+	room := data(a.request(msg{"type": "create_room"}))["room"].(string)
+	b.mustOK(msg{"type": "join", "room": room})
+	if r := a.request(msg{"type": "break_partner"}); data(r)["code"] != "not_paired" {
+		t.Errorf("unpaired: %v", data(r))
+	}
+	a.mustOK(msg{"type": "invite_partner", "to": "bob"})
+	b.mustOK(msg{"type": "accept_partner", "from": "alice"})
+	a.mustOK(msg{"type": "break_partner"})
+	b.wait("team_broken", isT("team_broken"))
+	a.mustOK(msg{"type": "invite_partner", "to": "bob"}) // free to pair again
+}
+
+// A watcher who arrives after the winners have left and gone is still told
+// their names, because the room kept the profiles it mentioned.
+func TestAWatcherGetsTheNamesOfWinnersWhoHaveGone(t *testing.T) {
+	g := startedGame(t, nil)
+	g.players["alice"].mustOK(msg{"type": "leave"}) // alice's team drops out: the other team wins by forfeit
+	winners := []string{"carol", "dave"}
+	for _, n := range winners {
+		g.players[n].wait("game over", isEvent("game_over"))
+	}
+	for _, n := range winners {
+		g.players[n].mustOK(msg{"type": "leave"})
+	}
+	for _, n := range winners {
+		_ = g.players[n].ws.Close(1000, "gone")
+	}
+	time.Sleep(150 * time.Millisecond) // let the server notice they went
+
+	fan := dial(t, g.url, "fan")
+	fan.wait("hello", isT("hello"))
+	fan.mustOK(msg{"type": "spectate", "room": g.room})
+	snap := fan.wait("the snapshot", isT("snapshot"))
+	result, _ := data(snap)["game"].(map[string]any)["result"].(map[string]any)
+	teams, _ := result["teams"].(map[string]any)
+	ids := map[string]bool{}
+	for _, v := range teams {
+		for _, id := range v.([]any) {
+			ids[id.(string)] = true
+		}
+	}
+	if len(ids) != 4 {
+		t.Fatalf("the result should name all four players, got %v", teams)
+	}
+	for _, id := range []string{"alice", "bob", "carol", "dave"} {
+		fan.wait("the profile of "+id, func(m msg) bool { return m["t"] == "profile" && data(m)["id"] == id && data(m)["name"] == id })
+	}
+}

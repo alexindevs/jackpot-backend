@@ -28,6 +28,9 @@ type (
 	InvitePartner  struct{ To engine.PlayerID }
 	AcceptPartner  struct{ From engine.PlayerID }
 	DeclinePartner struct{ From engine.PlayerID }
+	// BreakPartner ends the sender's partnership, so both can pair up with
+	// someone else. Lobby only.
+	BreakPartner struct{}
 )
 
 // Chat. TeamChat is the private chat between rounds; Chat is the public chat
@@ -64,6 +67,7 @@ func (InviteToRoom) isInput()   {}
 func (InvitePartner) isInput()  {}
 func (AcceptPartner) isInput()  {}
 func (DeclinePartner) isInput() {}
+func (BreakPartner) isInput()   {}
 func (Ready) isInput()          {}
 func (TeamChat) isInput()       {}
 func (Chat) isInput()           {}

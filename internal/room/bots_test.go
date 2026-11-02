@@ -1,6 +1,7 @@
 package room
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -194,5 +195,98 @@ func TestWithOneBotTeamLeftTheGameEndsByForfeitAndDoesNotCount(t *testing.T) {
 	res := h.r.Game().Result()
 	if h.r.Phase() != PhaseOver || res == nil || res.Reason != engine.EndForfeit || res.CountsForStats {
 		t.Errorf("phase %v, result %+v", h.r.Phase(), res)
+	}
+}
+
+func TestThreePeopleWithoutPartnersEachGetABotPartner(t *testing.T) {
+	h := newHarness(t, 108)
+	h.must(pid(1), Join{})
+	h.must(pid(2), Join{})
+	h.must(pid(0), AddBots{})
+	if len(h.r.members) != 6 || botsIn(h) != 3 {
+		t.Fatalf("members %d, bots %d, want 6 and 3", len(h.r.members), botsIn(h))
+	}
+	for _, id := range []engine.PlayerID{pid(0), pid(1), pid(2)} {
+		if p := h.partnerOf(id); p == "" || !h.r.members[p].bot {
+			t.Errorf("%s should have a bot partner, has %q", id, p)
+		}
+	}
+}
+
+func TestBreakingAPairLetsBothPairUpWithSomeoneElse(t *testing.T) {
+	h := newHarness(t, 109)
+	h.joinN(4) // p00..p03
+	h.must(pid(0), InvitePartner{To: pid(1)})
+	h.must(pid(1), AcceptPartner{From: pid(0)})
+	h.mustFail(pid(0), InvitePartner{To: pid(2)}, ErrAlreadyPaired) // paired people cannot pair again...
+
+	h.must(pid(0), BreakPartner{}) // ...until the pair is broken
+	if h.partnerOf(pid(0)) != "" || h.partnerOf(pid(1)) != "" {
+		t.Fatal("both should be free")
+	}
+	if got := msgs[TeamBroken](h.last, pid(2)); len(got) != 1 || got[0].A != pid(0) || got[0].B != pid(1) {
+		t.Errorf("the room should hear team_broken: %v", got)
+	}
+	h.must(pid(0), InvitePartner{To: pid(2)})
+	h.must(pid(2), AcceptPartner{From: pid(0)})
+	h.must(pid(1), InvitePartner{To: pid(3)})
+	h.must(pid(3), AcceptPartner{From: pid(1)})
+	if h.partnerOf(pid(0)) != pid(2) || h.partnerOf(pid(1)) != pid(3) {
+		t.Error("they should be able to pair with someone else")
+	}
+	h.must(pid(0), BreakPartner{})
+	h.must(pid(0), InvitePartner{To: pid(2)}) // and with each other again
+	h.must(pid(2), AcceptPartner{From: pid(0)})
+}
+
+func TestBreakingFromABotPartnerRemovesTheBot(t *testing.T) {
+	h := newHarness(t, 110)
+	h.must(pid(0), AddBots{})
+	bot := h.partnerOf(pid(0))
+	h.must(pid(0), BreakPartner{})
+	if h.r.members[bot] != nil || h.partnerOf(pid(0)) != "" {
+		t.Error("the bot partner should go and the person should be free")
+	}
+}
+
+func TestBreakPartnerRefusals(t *testing.T) {
+	h := newHarness(t, 111)
+	h.must(pid(1), Join{})
+	h.mustFail(pid(0), BreakPartner{}, ErrNotPaired)
+	h.mustFail("fan", BreakPartner{}, ErrNotMember)
+	h.must(pid(0), InvitePartner{To: pid(1)})
+	h.must(pid(1), AcceptPartner{From: pid(0)})
+	h.must(pid(0), AddBots{})
+	h.must(pid(0), StartNow{})
+	h.mustFail(pid(0), BreakPartner{}, ErrWrongPhase)
+}
+
+// The bug that was found in play: a winner left the finished game, and a
+// watcher who came later could not be told who had won.
+func TestTheResultStillNamesTheWinnersAfterTheyLeave(t *testing.T) {
+	h := newHarness(t, 112)
+	h.startGame(4)
+	h.startRound()
+	h.must(pid(0), Leave{}) // a team drops out; the other wins by forfeit
+	if h.r.Phase() != PhaseOver {
+		t.Fatalf("phase = %v: with one team left the game is won by forfeit", h.r.Phase())
+	}
+	res := h.r.Game().Result()
+	winners := append([]engine.PlayerID(nil), res.Teams[res.Winner]...)
+	if len(winners) != 2 {
+		t.Fatalf("the winning team = %v", winners)
+	}
+	for _, id := range winners { // the winners leave after the game is over
+		h.must(id, Leave{})
+		if h.r.members[id] != nil {
+			t.Fatalf("%s should be gone from the room's players", id)
+		}
+	}
+	got := h.r.snapshotFor(h.watch("fan")).Game.Result
+	if got == nil || len(got.Teams) != 2 {
+		t.Fatalf("result = %+v", got)
+	}
+	if !slices.Equal(got.Teams[res.Winner], winners) {
+		t.Errorf("the winning team must still name the players who left: %v, want %v", got.Teams[res.Winner], winners)
 	}
 }

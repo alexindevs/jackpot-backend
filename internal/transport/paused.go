@@ -233,7 +233,7 @@ func (m *Manager) pausedNow(mr *managed) bool {
 // created, if anything.
 func (m *Manager) launch(id string, r *room.Room, initial []room.Out) {
 	ctx, cancel := context.WithCancel(m.ctx)
-	mr := &managed{id: id, cancel: cancel}
+	mr := &managed{id: id, cancel: cancel, profiles: map[engine.PlayerID]Identity{}}
 	mr.runner = room.NewRunner(r, m.cfg.Now, func(outs []room.Out) { m.deliver(id, outs) })
 	a, b := cryptoSeed()
 	mr.runner.SetBots(bot.NewDriver(a^b, bot.Config{Speed: m.cfg.BotSpeed}))

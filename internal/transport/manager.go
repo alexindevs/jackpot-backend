@@ -120,6 +120,11 @@ type managed struct {
 	id     string
 	runner *room.Runner
 	cancel context.CancelFunc
+	// profiles are the names and looks of everyone the room has mentioned, kept
+	// for as long as the room lives, so that someone who watches a finished game
+	// later still sees the names of players who have since left. Guarded by
+	// Manager.mu.
+	profiles map[engine.PlayerID]Identity
 }
 
 // Manager owns every room and every connection.
@@ -482,13 +487,19 @@ func (m *Manager) deliver(roomID string, outs []room.Out) {
 		}
 
 		m.mu.Lock()
+		mr := m.rooms[roomID]
 		c := m.conns[o.To]
 		var profiles []Identity
-		if c != nil {
-			for _, id := range profilesIn(o.Msg) {
-				if ident, ok := m.identLocked(id); ok {
-					profiles = append(profiles, ident)
-				}
+		for _, id := range profilesIn(o.Msg) {
+			ident, ok := m.identLocked(id)
+			switch {
+			case ok && mr != nil:
+				mr.profiles[id] = ident
+			case !ok && mr != nil:
+				ident, ok = mr.profiles[id]
+			}
+			if ok && c != nil {
+				profiles = append(profiles, ident)
 			}
 		}
 		m.mu.Unlock()
@@ -511,12 +522,19 @@ func profilesIn(msg room.Message) []engine.PlayerID {
 		for _, p := range v.Players {
 			ids = append(ids, p.ID)
 		}
-		return append(ids, v.Waiting...)
+		ids = append(ids, v.Waiting...)
+		if v.Game != nil && v.Game.Result != nil {
+			ids = append(ids, resultPlayers(v.Game.Result)...)
+		}
+		return ids
 	case room.WaitingChanged:
 		return v.Players
 	case room.GameEvent:
-		if e, ok := v.Event.(engine.TeamAdded); ok {
+		switch e := v.Event.(type) {
+		case engine.TeamAdded:
 			return e.Members[:]
+		case engine.GameOver:
+			return resultPlayers(&e.Result)
 		}
 	case room.MemberJoined:
 		return []engine.PlayerID{v.Player}
@@ -526,6 +544,16 @@ func profilesIn(msg room.Message) []engine.PlayerID {
 		return []engine.PlayerID{v.From}
 	}
 	return nil
+}
+
+// resultPlayers is everyone on every team of a finished game, so a client can
+// be given their names before it is told who won.
+func resultPlayers(r *engine.Result) []engine.PlayerID {
+	var ids []engine.PlayerID
+	for _, team := range r.Teams {
+		ids = append(ids, team...)
+	}
+	return ids
 }
 
 func (m *Manager) hello(c *conn) []byte {

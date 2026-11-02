@@ -127,4 +127,8 @@ type Result struct {
 	// leaderboards or duo stats.
 	CountsForStats bool
 	Wins           map[TeamID]int
+	// Teams is who was on every team that played, including teams that were
+	// removed and players who had left, as they stood when the game ended. A
+	// player who came back after their team was removed is on their newest team.
+	Teams map[TeamID][]PlayerID
 }

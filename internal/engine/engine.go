@@ -645,6 +645,13 @@ func (s *State) finish(r Result) Event {
 	for t, w := range s.wins {
 		r.Wins[t] = w
 	}
+	r.Teams = map[TeamID][]PlayerID{}
+	for id, p := range s.players {
+		r.Teams[p.team] = append(r.Teams[p.team], id)
+	}
+	for _, ids := range r.Teams {
+		slices.Sort(ids)
+	}
 	s.phase = PhaseOver
 	s.result = &r
 	return GameOver{Result: r}

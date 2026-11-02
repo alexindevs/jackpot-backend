@@ -48,6 +48,7 @@ var (
 	ErrBadText         = errors.New("message must be 1 to 500 characters")
 	ErrSlowDown        = errors.New("you are sending messages too fast")
 	ErrNotCreator      = errors.New("only the room's creator can do that")
+	ErrNotPaired       = errors.New("you don't have a partner")
 	ErrTooFewPlayers   = errors.New("not enough players to start")
 	ErrUnpairedPlayers = errors.New("some players don't have a partner yet")
 )
@@ -360,7 +361,7 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 			// A restored lobby keeps working for the people in it. What waits
 			// for everyone is the countdown, and new people joining.
 			switch in.(type) {
-			case Join, StartNow, AddBots, RemoveBot:
+			case Join, StartNow, AddBots, RemoveBot, BreakPartner:
 				return ErrPaused
 			}
 		} else {
@@ -396,6 +397,8 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.acceptPartner(now, from, v.From)
 	case DeclinePartner:
 		return r.declinePartner(from, v.From)
+	case BreakPartner:
+		return r.breakPartner(from)
 	case Ready:
 		return r.setReady(now, from, v.Ready)
 	case TeamChat:

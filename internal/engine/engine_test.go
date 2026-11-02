@@ -875,3 +875,44 @@ func TestAGameWithNoStatsNeverCountsForThem(t *testing.T) {
 		t.Error("the stored result must agree")
 	}
 }
+
+func TestTheResultNamesEveryTeamThatPlayedEvenThoseWhoLeft(t *testing.T) {
+	s, by := betweenRounds(t, 3, 50)
+	gone, _ := s.PlayerTeam(by) // this team will leave, and another one too
+	var left []PlayerID
+	for id, p := range s.players {
+		if p.team == gone {
+			left = append(left, id)
+		}
+	}
+	slices.Sort(left)
+	mustApply(t, s, RemoveTeam{Team: gone})
+	mustApply(t, s, AddTeam{A: "late1", B: "late2"})
+	var other TeamID
+	for _, tm := range s.Teams() {
+		if tm != s.players["late1"].team {
+			other = tm
+			break
+		}
+	}
+	evs := mustApply(t, s, RemoveTeam{Team: other})
+	evs = append(evs, mustApply(t, s, RemoveTeam{Team: s.players["late1"].team})...) // down to one team: forfeit
+	over, ok := find[GameOver](evs)
+	if !ok {
+		t.Fatalf("the game should be over: %v", evs)
+	}
+	teams := over.Result.Teams
+	if !slices.Equal(teams[gone], left) {
+		t.Errorf("the team that left first is still listed: %v, want %v", teams[gone], left)
+	}
+	if got := teams[s.players["late1"].team]; !slices.Equal(got, []PlayerID{"late1", "late2"}) {
+		t.Errorf("the late team = %v", got)
+	}
+	total := 0
+	for _, ids := range teams {
+		total += len(ids)
+	}
+	if total != len(s.players) || s.Result() == nil || len(s.Result().Teams) != len(teams) {
+		t.Errorf("every player is on exactly one team: %d listed, %d players", total, len(s.players))
+	}
+}
