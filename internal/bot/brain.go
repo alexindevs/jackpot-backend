@@ -375,7 +375,7 @@ func (b *brain) planPlay(now time.Time, snap room.Snapshot, me *room.PlayerInfo,
 	if b.trusted != nil && g.Holder != me.Partner && !now.Before(b.lockedUntil) {
 		// Let the signal sink in: never proclaim straight after it.
 		at := now.Add(d.respond())
-		if gap := b.trusted.at.Add(d.think(10, 30)); gap.After(at) {
+		if gap := b.trusted.at.Add(d.think(5, 15)); gap.After(at) {
 			at = gap
 		}
 		b.schedule(kProclaim, at, "")
