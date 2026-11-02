@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/alexindevs/jackpot-backend/internal/api"
+	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/room"
 	"github.com/alexindevs/jackpot-backend/internal/store"
 	"github.com/alexindevs/jackpot-backend/internal/transport"
@@ -198,9 +199,12 @@ func newStackOn(t *testing.T, db *store.Store, mod func(*room.Config)) *stack {
 	auth := transport.Dev{}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := transport.NewManager(ctx, transport.Config{
-		Game: "jackpot", Room: cfg, Auth: auth,
+		Game: "jackpot", Room: cfg, Auth: auth, BotSpeed: 300,
 		OnSignIn: func(id transport.Identity) {
 			writer.Seen(store.Player{ID: string(id.ID), Name: id.Name, Style: id.Style})
+		},
+		History: func(ctx context.Context, p engine.PlayerID) (any, error) {
+			return db.FinishedGames(ctx, string(p), 20)
 		},
 	})
 	mux := http.NewServeMux()
@@ -361,6 +365,43 @@ func TestAGameIsPlayedRecordedAndShownOnTheLeaderboards(t *testing.T) {
 	if status, _ := getJSON(t, base, "/api/games/1/chat", "Authorization", "Bearer dev:mallory"); status != 403 {
 		t.Errorf("an outsider reading chat: %d", status)
 	}
+
+	// And each player can see the game in their own list of finished games.
+	finished := func(name string) map[string]any {
+		players[name].send(msg{"type": "finished_games"})
+		m := players[name].wait("their finished games", func(m msg) bool { return m["t"] == "finished_games" })
+		list := m["d"].([]any)
+		if len(list) != 1 {
+			t.Fatalf("%s's finished games = %v, want the one game", name, list)
+		}
+		return list[0].(map[string]any)
+	}
+	for name, want := range map[string]string{"alice": "won", "bob": "won", "carol": "lost", "dave": "lost"} {
+		g := finished(name)
+		if g["outcome"] != want || g["reason"] != "normal" || g["winsToFinish"] != float64(1) || g["round"] != float64(1) || g["countsForStats"] != true || g["room"] != roomID || g["finishedAt"] == nil {
+			t.Errorf("%s sees %v, want %s", name, g, want)
+		}
+		teams := g["teams"].([]any)
+		if len(teams) != 2 {
+			t.Fatalf("%s: teams = %v", name, teams)
+		}
+		mine, winners := 0, 0
+		for _, tm := range teams {
+			tmm := tm.(map[string]any)
+			if tmm["mine"] == true {
+				mine++
+			}
+			if tmm["wins"] == float64(1) {
+				winners++
+			}
+			if len(tmm["names"].([]any)) != 2 {
+				t.Errorf("%s: a team should name two players: %v", name, tmm)
+			}
+		}
+		if mine != 1 || winners != 1 {
+			t.Errorf("%s: one team is mine and one won a round: %v", name, teams)
+		}
+	}
 }
 
 // The public chat goes out live over the sockets, is saved as it happens, and
@@ -430,4 +471,68 @@ func eventually(t *testing.T, what string, cond func() bool) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// A game against bots runs to the end through every layer, is saved, shows bot
+// names in the player's list of finished games, and counts toward nothing.
+func TestAGameWithBotsIsRecordedButNeverCountsForAnyLeaderboard(t *testing.T) {
+	st := newStack(t, func(c *room.Config) {
+		c.Engine.WinsToFinish = 1
+		c.HoldTimer = 100 * time.Millisecond // the person does not play, so the server passes for them
+		c.PromptTimeout = 100 * time.Millisecond
+		c.PreRoundChat = 150 * time.Millisecond
+	})
+	alice := dial(t, st.wsURL, "alice")
+	alice.wait("hello", func(m msg) bool { return m["t"] == "hello" })
+	alice.ok(msg{"type": "create_room"})
+	alice.ok(msg{"type": "add_bots"})
+	alice.ok(msg{"type": "start_now"})
+
+	over := false
+	for deadline := time.Now().Add(90 * time.Second); time.Now().Before(deadline) && !over; time.Sleep(20 * time.Millisecond) {
+		alice.mu.Lock()
+		for _, m := range alice.msgs {
+			if m["t"] == "game_event" && m["kind"] == "game_over" {
+				over = true
+			}
+		}
+		alice.mu.Unlock()
+	}
+	if !over {
+		t.Fatal("the bots never finished the game")
+	}
+	st.drain(t)
+
+	for _, path := range []string{"/api/leaderboards/mvp?role=proclaimer", "/api/leaderboards/mvp?role=holder", "/api/leaderboards/duos"} {
+		status, body := getJSON(t, st.srv.URL, path)
+		if list, _ := body.([]any); status != 200 || len(list) != 0 {
+			t.Errorf("%s = %d %v: a game with bots must not appear on any board", path, status, body)
+		}
+	}
+
+	alice.send(msg{"type": "finished_games"})
+	m := alice.wait("her finished games", func(m msg) bool { return m["t"] == "finished_games" })
+	list := m["d"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("finished games = %v", list)
+	}
+	g := list[0].(map[string]any)
+	if g["countsForStats"] != false {
+		t.Errorf("countsForStats = %v, want false for a game with bots", g["countsForStats"])
+	}
+	bots := 0
+	for _, tm := range g["teams"].([]any) {
+		for _, n := range tm.(map[string]any)["names"].([]any) {
+			name := n.(string)
+			if strings.HasPrefix(name, "bot:") || name == "" {
+				t.Errorf("a bot should show a real name, got %q", name)
+			}
+			if name != "alice" {
+				bots++
+			}
+		}
+	}
+	if bots != 3 {
+		t.Errorf("%d bot names in the list, want 3", bots)
+	}
 }
