@@ -170,6 +170,11 @@ func (r *Room) play(now time.Time, from engine.PlayerID, cmd engine.Command) err
 	if r.game == nil || r.phase == PhaseOver {
 		return ErrWrongPhase
 	}
+	if v, ok := cmd.(engine.VoteEnd); ok && r.game.Voted(v.Player) == v.Agree {
+		// The same vote again changes nothing, so it is not applied or saved:
+		// otherwise one player could fill the game's log by repeating it.
+		return nil
+	}
 	return r.apply(now, cmd)
 }
 

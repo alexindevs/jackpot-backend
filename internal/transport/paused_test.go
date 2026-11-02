@@ -262,3 +262,22 @@ func TestAGameWhoseEveryoneLeftPausesAndShowsUpInTheirList(t *testing.T) {
 		t.Errorf("my_games = %v", r)
 	}
 }
+
+func TestAFloodOfTheSameVoteIsSavedOnce(t *testing.T) {
+	rec := &recorder{}
+	g := startedGame(t, func(c *Config) { c.Room.OnRecord = rec.add })
+	alice := g.players["alice"]
+	for i := 0; i < 30; i++ { // inside the rate limit, so every request is answered
+		alice.mustOK(msg{"type": "vote_end", "agree": true})
+	}
+	time.Sleep(100 * time.Millisecond) // let the room report what it saved
+	votes := 0
+	for _, c := range rec.saved(time.Now()).Commands {
+		if _, ok := c.(engine.VoteEnd); ok {
+			votes++
+		}
+	}
+	if votes != 1 {
+		t.Errorf("30 identical votes were saved as %d, want 1", votes)
+	}
+}

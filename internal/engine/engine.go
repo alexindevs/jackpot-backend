@@ -430,6 +430,9 @@ func (s *State) reset(id PlayerID) Event {
 
 // --- proclaiming ---
 
+// Voted reports whether the player currently agrees to end the game early.
+func (s *State) Voted(id PlayerID) bool { return s.votes[id] }
+
 // ProclaimRevoked reports whether the player is in the game but locked out of
 // proclaiming by an earlier false proclamation at 0 points.
 func (s *State) ProclaimRevoked(id PlayerID) bool {

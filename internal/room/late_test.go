@@ -1,6 +1,8 @@
 package room
 
 import (
+	"math/rand/v2"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -221,4 +223,111 @@ func TestTheRoomListSaysWhenAJoinWouldBeAccepted(t *testing.T) {
 	if h.r.Info().Waiting != 1 || len(h.r.snapshotFor(pid(0)).Waiting) != 1 {
 		t.Error("who is waiting should show in the room list and the snapshot")
 	}
+}
+
+func voteRecords(recs *[]Record) int {
+	n := 0
+	for _, r := range *recs {
+		if c, ok := r.(CommandApplied); ok {
+			if _, isVote := c.Command.(engine.VoteEnd); isVote {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func TestARepeatedVoteIsIgnoredAndNotSaved(t *testing.T) {
+	h, recs := recordedAll(t, DefaultConfig())
+	h.playing(6) // 3 teams, so one vote cannot end the game
+	a := pid(0)
+
+	h.must(a, VoteEnd{Agree: true})
+	if voteRecords(recs) != 1 || len(gameEvents[engine.VoteChanged](h.last, pid(1))) != 1 {
+		t.Fatalf("the first vote is applied, saved and announced: %d records", voteRecords(recs))
+	}
+	seq := h.r.cmdSeq
+	for i := 0; i < 500; i++ { // a flood of the same vote
+		h.must(a, VoteEnd{Agree: true})
+		if len(h.last) != 0 {
+			t.Fatalf("a repeated vote sends nothing, got %v", h.last)
+		}
+	}
+	if voteRecords(recs) != 1 || h.r.cmdSeq != seq {
+		t.Errorf("500 repeats were saved: %d vote records, cmdSeq %d (was %d)", voteRecords(recs), h.r.cmdSeq, seq)
+	}
+
+	h.must(a, VoteEnd{Agree: false}) // changing your mind is a real vote
+	h.must(a, VoteEnd{Agree: false})
+	h.must(pid(2), VoteEnd{Agree: false}) // never voted: saying no changes nothing
+	if voteRecords(recs) != 2 {
+		t.Errorf("vote records = %d, want 2 (agree, then disagree)", voteRecords(recs))
+	}
+}
+
+func TestIgnoringRepeatedVotesStillRefusesWhatShouldBeRefused(t *testing.T) {
+	h := newHarness(t, 90)
+	h.playing(4)
+	h.mustFail("fan", VoteEnd{Agree: true}, ErrNotPlayer) // not in the game
+	h.mustFail("fan", VoteEnd{Agree: false}, ErrNotPlayer)
+	h.r.Pause(h.now, h.now.Add(time.Hour))
+	h.mustFail(pid(0), VoteEnd{Agree: false}, ErrPaused) // a no-op vote is still refused while paused
+}
+
+func TestAMajorityStillEndsTheGameWhenRepeatsAreIgnored(t *testing.T) {
+	h := newHarness(t, 91)
+	h.playing(4)
+	for i := 0; i < 3; i++ {
+		h.must(pid(i), VoteEnd{Agree: true})
+		h.must(pid(i), VoteEnd{Agree: true}) // repeats in between change nothing
+	}
+	if h.r.Phase() != PhasePlaying {
+		t.Fatal("not everyone has agreed yet")
+	}
+	h.must(pid(3), VoteEnd{Agree: true})
+	if h.r.Phase() != PhaseOver {
+		t.Fatalf("everyone agreed, so the game should be over; phase = %v", h.r.Phase())
+	}
+	h.mustFail(pid(3), VoteEnd{Agree: true}, ErrWrongPhase) // once it is over, a repeat is refused as before
+}
+
+func TestARestartAfterManyRepeatedVotesRebuildsTheSameGame(t *testing.T) {
+	h, recs := recordedAll(t, DefaultConfig())
+	h.playing(6)
+	d := rand.New(rand.NewPCG(5, 6))
+	// Only two players who are not partners vote, so no team ever has both
+	// partners agreeing and the game goes on.
+	voters := []engine.PlayerID{pid(0)}
+	for i := 1; i < 6; i++ {
+		if pid(i) != h.partnerOf(pid(0)) {
+			voters = append(voters, pid(i))
+			break
+		}
+	}
+	for i := 0; i < 400; i++ {
+		h.must(voters[d.IntN(2)], VoteEnd{Agree: d.IntN(2) == 0})
+		if i%25 == 0 {
+			h.must(h.hold(), Pass{Card: firstHeld(h, h.hold())})
+		}
+	}
+	if h.r.Phase() != PhasePlaying {
+		t.Fatalf("phase = %v", h.r.Phase())
+	}
+	r, err := Restore(DefaultConfig(), savedFrom(t, h, recs), h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(h.r.game, r.game) {
+		t.Error("the restored game differs after a storm of repeated votes")
+	}
+}
+
+// firstHeld is any card type the player holds.
+func firstHeld(h *harness, id engine.PlayerID) engine.CardType {
+	for ty, n := range h.r.game.Hand(id) {
+		if n > 0 {
+			return engine.CardType(ty)
+		}
+	}
+	return 0
 }

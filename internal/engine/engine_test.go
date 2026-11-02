@@ -835,3 +835,22 @@ func TestAddTeamSurvivesBeingStoredAndReplayed(t *testing.T) {
 		t.Fatalf("round trip gave %v, %v", c, err)
 	}
 }
+
+// The room does not apply a vote that repeats the one already cast. That is
+// only safe if applying it would change nothing, and old saved games that
+// contain repeats must replay to the same game.
+func TestRepeatingAVoteChangesNothing(t *testing.T) {
+	s := started(t, 3, 30)
+	id := s.Seats()[0]
+	for _, agree := range []bool{false, true, false} {
+		mustApply(t, s, VoteEnd{Player: id, Agree: agree})
+		before := snapshot(s)
+		mustApply(t, s, VoteEnd{Player: id, Agree: agree})
+		if snapshot(s) != before {
+			t.Fatalf("voting agree=%v twice changed the game", agree)
+		}
+		if s.Voted(id) != agree {
+			t.Errorf("Voted = %v after voting %v", s.Voted(id), agree)
+		}
+	}
+}
