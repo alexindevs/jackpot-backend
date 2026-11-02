@@ -144,6 +144,14 @@ Anything not marked is Decided.
 
 ---
 
+## 12a. Bots
+
+- The room's creator can fill the lobby with **bots**, so one or two people can play. Each person without a partner gets a bot partner, and teams of bots are added to make at least two teams. Up to 9 bots. A **visible tag** marks a bot.
+- Bots play by the same rules, see only what a player in their seat sees, and use the same signals. They never chat in public. They tell a human partner their code, in plain words, in the private team chat before each round.
+- **A game with bots never counts** toward the leaderboards or duo stats.
+- The host is always a person. If the last person leaves, the game ends. If every person disconnects, the game pauses and waits **10 minutes** for one to come back, then ends.
+- See `docs/bots.md`.
+
 ## 13. Pausing and resuming
 
 - A game that has started is never lost to a restart or a bad night of connections. It is **saved as it is played** (the setup and every action), and the server can rebuild it exactly.

@@ -92,7 +92,7 @@ func labelOf(gestures []room.Gesture, id string) string {
 // gesture and %[2]s the "four of a kind" one.
 var templates = []string{
 	"Oya, our code for this round. \"%[1]s\" means I'm one card short. \"%[2]s\" means I have all four. If you get four, send \"%[2]s\" from the Signal list and I'll call Jackpot for you.",
-	"Code for this round, keep it between us. \"%[1]s\" = I'm close. \"%[2]s\" = I've got four of a kind. Send \"%[2]s\" when you have yours and I'll call it.",
+	"Code for this round, keep it between us. \"%[1]s\" = I'm close. \"%[2]s\" = I've got four of a kind. Send \"%[2]s\" when you have yours and I'll call Jackpot for you.",
 	"Here's the plan this round. I'll send \"%[1]s\" when I'm nearly there and \"%[2]s\" when I'm done. You send \"%[2]s\" when you've got four and I'll shout Jackpot for you.",
 	"Quick code before we start. \"%[1]s\" is me being one card away. \"%[2]s\" is me holding four. If it's you holding four, send \"%[2]s\" and I'll call Jackpot straight away.",
 	"Abeg remember this one. \"%[1]s\" means almost. \"%[2]s\" means four of a kind. Look for them in your Signal list. When you send \"%[2]s\", I call Jackpot.",

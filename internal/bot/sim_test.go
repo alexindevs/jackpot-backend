@@ -30,7 +30,12 @@ type simResult struct {
 
 // playGame plays a whole game with a fake clock. One seat is a "person" who is
 // played by the same brain as the bots (the driver's Also), so every seat acts.
-func playGame(t *testing.T, seed uint64, botTeams int, short bool) simResult {
+func playGame(t *testing.T, seed uint64, botTeams int, short bool, afk bool) simResult {
+	return playGameWith(t, seed, botTeams, short, afk, nil)
+}
+
+// playGameWith can also run a hook every few steps, to disturb the game.
+func playGameWith(t *testing.T, seed uint64, botTeams int, short bool, afk bool, disturb func(step int, now time.Time, pump *room.Pump) time.Time) simResult {
 	t.Helper()
 	cfg := room.DefaultConfig()
 	if short {
@@ -39,7 +44,9 @@ func playGame(t *testing.T, seed uint64, botTeams int, short bool) simResult {
 	var opts []room.Option
 	r, outs := room.New(cfg, fmt.Sprintf("sim%d", seed), human, rand.New(rand.NewPCG(seed, seed+1)), t0, opts...)
 	drv := NewDriver(seed, Config{Speed: 1})
-	drv.Also(human)
+	if !afk {
+		drv.Also(human)
+	}
 	var res simResult
 	pump := &room.Pump{Room: r, Bots: drv, Sink: func(outs []room.Out) {
 		for _, o := range outs {
@@ -82,6 +89,9 @@ func playGame(t *testing.T, seed uint64, botTeams int, short bool) simResult {
 			now = at
 		}
 		pump.Advance(now)
+		if disturb != nil {
+			now = disturb(res.steps, now, pump)
+		}
 		if g := r.Game(); g != nil {
 			if err := g.CheckInvariants(); err != nil {
 				t.Fatalf("seed %d: step %d: %v", seed, res.steps, err)
@@ -112,7 +122,7 @@ func TestBotsPlayWholeGamesToTheEnd(t *testing.T) {
 	var elapsed time.Duration
 	for seed := uint64(1); seed <= uint64(games); seed++ {
 		botTeams := 1 + int(seed%4) // 2 to 5 teams in all with the person's
-		res := playGame(t, seed, botTeams, true)
+		res := playGame(t, seed, botTeams, true, false)
 		if !res.over {
 			t.Fatalf("seed %d: the game did not finish: %+v", seed, res)
 		}
@@ -129,4 +139,43 @@ func TestBotsPlayWholeGamesToTheEnd(t *testing.T) {
 	t.Logf("%d games: %.1f rounds each, %.1f false calls, %.1f suspicions (%.1f caught someone), %.0f signals seen by the person, %v of game time each",
 		games, float64(rounds)/float64(games), float64(falseCalls)/float64(games), float64(suspicions)/float64(games),
 		float64(caught)/float64(games), float64(signals)/float64(games), (elapsed / time.Duration(games)).Round(time.Second))
+}
+
+// A person who never does anything still has a seat: the server passes for
+// them, and the bots carry on around them.
+func TestBotsFinishAGameWithAPersonWhoNeverActs(t *testing.T) {
+	for seed := uint64(1); seed <= 6; seed++ {
+		res := playGame(t, seed, 1+int(seed%3), true, true)
+		if !res.over {
+			t.Fatalf("seed %d: the game did not finish: %+v", seed, res)
+		}
+	}
+}
+
+// The person drops off in the middle of the game and comes back after the game
+// has paused; it must carry on to the end.
+func TestBotsCarryOnAfterThePersonReturnsFromAPause(t *testing.T) {
+	for seed := uint64(1); seed <= 5; seed++ {
+		done := false
+		res := playGameWith(t, seed, 2, true, false, func(step int, now time.Time, pump *room.Pump) time.Time {
+			if done || step < 40 || pump.Room.Phase() != room.PhasePlaying {
+				return now
+			}
+			done = true
+			_ = pump.Handle(now, human, room.Disconnect{})
+			now = now.Add(2 * time.Minute) // long enough for the game to pause
+			pump.Advance(now)
+			if _, paused := pump.Room.Paused(); !paused {
+				t.Fatalf("seed %d: the game should have paused", seed)
+			}
+			now = now.Add(time.Minute)
+			if err := pump.Handle(now, human, room.Connect{}); err != nil {
+				t.Fatalf("seed %d: reconnect: %v", seed, err)
+			}
+			return now
+		})
+		if !res.over || !done {
+			t.Fatalf("seed %d: paused and resumed (%v) but the game did not finish: %+v", seed, done, res)
+		}
+	}
 }

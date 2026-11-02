@@ -36,6 +36,8 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `join` | `room` | become a player in a lobby. In a game that has started, ask to play: you watch while you wait in line, and between rounds the first two in line become a new team (rules section 11a). Works for a watcher already in the room too |
 | `spectate` | `room` | watch |
 | `leave` | | leave the lobby, drop out of a game (instant), or stop watching |
+| `add_bots` | `teams` (number, optional) | creator only, lobby only. Gives every person without a partner a bot partner, then adds teams of bots until there are two teams in all, or `teams` bot teams if you ask for them. Up to 9 bots (10 seats). Errors: `not_creator`, `wrong_phase`, `nothing_to_add`, `room_full` |
+| `remove_bot` | `player` | creator only, lobby only. Removes a bot; a bot partnered with another bot goes with it. Errors: `not_creator`, `wrong_phase`, `not_a_bot` |
 | `start_now` | | creator only; needs 2+ teams and nobody without a partner |
 | `invite_room` | `to` | tell someone about the room |
 | `invite_partner` | `to` | `to` may be someone not in the room yet; accepting joins them |
@@ -49,7 +51,7 @@ Any request except `ping` and `list_rooms` may also carry a `"key"`: a random st
 | `proclaim` | | |
 | `vote_end` | `agree` (bool) | vote to end the game early. Sending the vote you already have is answered `ok` and ignored: nothing changes, nothing is announced and nothing is saved |
 
-Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
+Replies: `{"t":"ok","id":...}`, or `{"t":"error","id":...,"d":{"code":"...","message":"..."}}`. Codes include `nothing_to_add`, `not_a_bot`, `bad_message`, `not_in_room`, `already_in_room`, `no_such_room`, `room_full`, `not_joinable`, `not_player`, `not_creator`, `too_few_players`, `unpaired_players`, `already_paired`, `no_invite`, `already_invited`, `wrong_phase`, `not_holder`, `no_such_card`, `no_points`, `self_suspect`, `busy`, `nothing_to_answer`, `bad_reveal`, `proclaim_revoked`, `partner_holds_passing_card`, `bad_text`, `slow_down`, `game_over`, `already_member`, `bad_gesture`, `bad_target`, `rate_limited`, `unknown_player`, `paused`.
 
 A rejected request changes nothing and sends nothing else.
 
@@ -65,7 +67,7 @@ Shape: `{"t": "<name>", "d": {...}}`. Game events are `{"t":"game_event","kind":
 - `heartbeat`: `{serverTime}`, sent every 20 seconds whether or not anything else is happening. If nothing at all arrives for about 50 seconds, treat the connection as dead and reconnect.
 - `hello`: `{you:{id,name,style}, serverTime}`. Use `serverTime` to correct clock differences when showing countdowns.
 - `profile`: `{id,name,style}`. The name and character for a player id, sent before the messages that mention them.
-- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable,waiting,paused,short}`. `joinable` means a `join` would be accepted: into a lobby, or into the waiting line of a running game that has room for another team. `waiting` is how many watchers are waiting to be paired into a team. `short` is true when the creator chose a short game. The snapshot carries `short` too, so someone who joins a lobby can see it. `game_starting.winsToFinish` is 4 for a short game and 7 for a long one: draw the scoreboard from it, not from a fixed seven letters.
+- `rooms`: a list of `{id,creator,phase,players,teams,spectators,maxPlayers,joinable,waiting,bots,paused,short}`. `joinable` means a `join` would be accepted: into a lobby, or into the waiting line of a running game that has room for another team. `waiting` is how many watchers are waiting to be paired into a team. `bots` is how many of the players are bots. `short` is true when the creator chose a short game. The snapshot carries `short` too, so someone who joins a lobby can see it. `game_starting.winsToFinish` is 4 for a short game and 7 for a long one: draw the scoreboard from it, not from a fixed seven letters.
 - `room_created`: `{room}`.
 - `snapshot`: the whole room as you may see it, sent when you enter and when you reconnect. It also carries `seq` and `gestures: [{id,label,seen,group}]`, the signal vocabulary (about 200, in groups). `{room,creator,phase,pausedUntil?,teamChat?,players:[{id,connected,partner,ready,removed,team}],spectators,timers:[{kind,player,endsAt}],game}`. `game` is `{round,phase,holder,seats,wins,points,yourHand,hands,pendingReveals,forcedPass,result}`; `result` is only there once the game is over, in the same shape as `game_over`'s (`winner`, `draw`, `reason`, `countsForStats`, `wins`), so someone who reconnects or arrives after the end can still be told who won; `yourHand` is only for players, and `hands` (everyone's) only for spectators.
 - `room_closed`: `{reason}`.

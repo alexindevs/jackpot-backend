@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net/url"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -400,5 +401,55 @@ func TestDeletingAGameDeletesItsDetails(t *testing.T) {
 	_ = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM rounds) + (SELECT count(*) FROM game_players) + (SELECT count(*) FROM chat_messages)`).Scan(&n)
 	if n != 0 {
 		t.Errorf("%d orphan rows", n)
+	}
+}
+
+func TestGamesWithBotsStayOffTheLeaderboardsAndBotsHaveNames(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	teams := [][2]string{{"alice", "bot:garba"}, {"bot:sani", "bot:uyai"}}
+	// Even if a game with bots were marked as counting, it must stay off the boards.
+	id := play(t, s, teams, []RoundSummary{
+		{Round: 1, Team: 0, Proclaimer: PlayerRef{ID: "alice"}, Holder: PlayerRef{ID: "bot:garba"}},
+	}, &Outcome{Reason: "wins", WinnerTeam: 0, CountsForStats: true})
+	// A real game alongside it counts as usual.
+	play(t, s, [][2]string{{"p1", "p2"}, {"p3", "p4"}}, []RoundSummary{
+		{Round: 1, Team: 0, Proclaimer: PlayerRef{ID: "p1"}, Holder: PlayerRef{ID: "p2"}},
+	}, &Outcome{Reason: "wins", WinnerTeam: 0, CountsForStats: true})
+
+	for _, role := range []Role{RoleProclaimer, RoleHolder} {
+		board, err := s.TopPlayers(ctx, role, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range board {
+			if e.Player.ID == "alice" || strings.HasPrefix(e.Player.ID, "bot:") {
+				t.Errorf("%s board has %s from a game with bots", role, e.Player.ID)
+			}
+		}
+		if len(board) == 0 {
+			t.Errorf("%s board lost the real game too", role)
+		}
+	}
+	duos, err := s.TopDuos(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range duos {
+		for _, p := range d.Players {
+			if p.ID == "alice" || strings.HasPrefix(p.ID, "bot:") {
+				t.Errorf("duo board has %s from a game with bots", p.ID)
+			}
+		}
+	}
+
+	g, err := s.Game(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range g.Players {
+		if p.Player.ID == "bot:garba" && p.Player.Name != "Garba" {
+			t.Errorf("a bot should show its name, got %q", p.Player.Name)
+		}
 	}
 }

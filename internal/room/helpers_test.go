@@ -256,7 +256,7 @@ func (r *Room) checkInvariants() error {
 	}
 	connected := 0
 	for _, m := range r.members {
-		if m.connected && !m.removed {
+		if m.connected && !m.removed && !m.bot {
 			connected++
 		}
 	}

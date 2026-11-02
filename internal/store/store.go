@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexindevs/jackpot-backend/internal/botname"
+	"github.com/alexindevs/jackpot-backend/internal/engine"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -243,6 +246,8 @@ func ref(id string, name *string, style []byte) PlayerRef {
 	r := PlayerRef{ID: id, Name: id, Style: style}
 	if name != nil {
 		r.Name = *name
+	} else if n, st, ok := botname.Profile(engine.PlayerID(id)); ok {
+		r.Name, r.Style = n, st // a bot has no row of its own
 	}
 	return r
 }
@@ -277,6 +282,7 @@ func (s *Store) TopPlayers(ctx context.Context, role Role, limit int) ([]MVPEntr
 	rows, err := s.pool.Query(ctx, `
 		SELECT r.`+col+`, p.name, p.style, COUNT(*) AS wins
 		FROM rounds r LEFT JOIN players p ON p.id = r.`+col+`
+		WHERE NOT EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = r.game_id AND gp.player_id LIKE 'bot:%')
 		GROUP BY r.`+col+`, p.name, p.style
 		ORDER BY wins DESC, r.`+col+` ASC
 		LIMIT $1`, limit)
@@ -323,6 +329,7 @@ func (s *Store) TopDuos(ctx context.Context, limit int) ([]DuoEntry, error) {
 		LEFT JOIN players pa ON pa.id = a.player_id
 		LEFT JOIN players pb ON pb.id = b.player_id
 		WHERE g.status = 'finished' AND g.counts_for_stats
+		  AND NOT EXISTS (SELECT 1 FROM game_players gp WHERE gp.game_id = g.id AND gp.player_id LIKE 'bot:%')
 		GROUP BY a.player_id, pa.name, pa.style, b.player_id, pb.name, pb.style
 		HAVING COUNT(*) FILTER (WHERE g.winner_team = a.team) > 0
 		ORDER BY wins DESC, games ASC, a.player_id, b.player_id

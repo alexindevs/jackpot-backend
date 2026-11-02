@@ -1,6 +1,6 @@
 # Bots: design
 
-Status: a design, not built. Written so that one person, or two, can open a lobby, press "Add bots", and play a full game.
+Status: built on the backend (the frontend button and tag are still to do). Written so that one person, or two, can open a lobby, press "Add bots", and play a full game.
 
 ## What the author has decided
 
@@ -10,6 +10,10 @@ Status: a design, not built. Written so that one person, or two, can open a lobb
 - What a bot says to its human partner has to be **readable by a human**: plain sentences in the team chat, and a code a person can remember.
 - **Bot games never count toward the leaderboards** (MVPs, legendary duos).
 - It will add considerable time. That is accepted.
+- **No public chat from bots.** Their only words are the code they tell a human partner in the private team chat.
+- **As many bots as the room can hold (9 seats of 10), but the host is always a person.** If the last person leaves, or disconnects and does not come back (10 minutes), the game ends.
+- **One difficulty:** reasonably hard, not impossible to beat and not terribly easy.
+- **A visible "bot" tag** next to every bot, in the lobby and at the table. The names read as real people; the tag keeps nobody guessing.
 
 ## How a bot fits in
 
@@ -115,10 +119,15 @@ An **Add bots** button (creator, lobby only), a **remove** button on a bot, the 
 4. **Frontend, names review, polish:** 1 to 2 days.
 5. **Tuning:** ongoing, helped a great deal by the simulation.
 
-## Open questions for the author
+## What was built
 
-1. A visible "bot" tag, or none? (Recommended: a small tag.)
-2. One difficulty at launch, or two?
-3. The final name list, checked by speakers of each language.
-4. Should bots chat in public at all, and how much?
-5. Maximum bots per room (9) and rooms-with-bots per account.
+- `internal/botname`: the 52 names, bot ids (`bot:<name>`), and each bot's look.
+- `internal/bot`: the driver and the brain. `add_bots` and `remove_bot` in the room, with the rules above.
+- `engine.Config.NoStats`: a game with bots never counts. The duo and MVP boards also leave out every game that has a bot in it, even if it were marked as counting.
+- The REST API shows a bot's name and look, though a bot has no profile row.
+
+## Still to do
+
+- Frontend: the Add bots button (creator, lobby), the visible bot tag, a remove button, and a way to show what a bot's code means.
+- Tuning against real people. In simulation (whole games played with a fake clock, at a person's pace) a short game takes about 7 rounds and 16 minutes, with a handful of suspicions a game. How hard that feels to a human partner who reads the code badly is not known yet.
+- The names should be checked by speakers of each language.
