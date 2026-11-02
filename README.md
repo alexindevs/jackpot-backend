@@ -6,6 +6,7 @@ The game server for Jackpot, a card game for 2 to 5 teams of 2 played on [start.
 - `docs/protocol.md` the WebSocket protocol
 - `docs/api.md` the REST API
 - `docs/architecture.md` how it fits together, and what is still unverified
+- `docs/bots.md` the design for playing with bots (not built yet)
 
 ## Layout
 
