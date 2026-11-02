@@ -65,7 +65,7 @@ A starting design. Every number below is a config value to tune.
    - **A sudden start.** An opponent who has not signalled for 5 turns (a turn is one pass of the card), or at all this round once 5 turns have passed, and then does (40%).
    - **The passing card.** About one pass in ten makes someone at the table suspect whoever just got the card: a 10% chance for the table, shared between the bots on the other team, so it does not grow with the number of bots.
    - **Not every time.** Whatever the reason, a bot lets it go by 40% of the time. The bots take turns in a random order and wait a little extra after the reason, and two of them never suspect the same player at once.
-7. **Timing.** Never act instantly. A bot takes a random **5 to 37 seconds** to do anything (the author's choice), except for questions the server only waits 30 seconds for (what to show when suspected, which card to give up after being caught), where it answers within 5 to 25 seconds. It signals that it is ready only after it has posted its code, so a person can read it first. Two bots never act at the same moment.
+7. **Timing.** Never act instantly. A bot takes a random **5 to 15 seconds** to do anything (the author's choice), which also keeps it well inside the 30 seconds the server gives for a reveal or a forced pass. It signals that it is ready only after it has posted its code, so a person can read it first. Two bots never act at the same moment.
 8. **Chat.** Light, rare public-chat lines, in a natural voice. Off by default; the team chat is the one that matters.
 
 ### Partnering: a code a person can read
