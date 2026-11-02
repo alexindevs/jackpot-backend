@@ -488,3 +488,58 @@ func TestAWatcherWhoArrivesAfterTheEndIsToldHowItEnded(t *testing.T) {
 		t.Errorf("the snapshot of a finished game should carry the result, got %v", data(snap)["game"])
 	}
 }
+
+func TestSomeoneNewJoinsARunningGameByLinkAndLeavesTheLineByDisconnecting(t *testing.T) {
+	g := startedGame(t, nil)
+	alice := g.players["alice"]
+	newcomer := dial(t, g.url, "newcomer")
+	newcomer.wait("hello", isT("hello"))
+	newcomer.mustOK(msg{"type": "join", "room": g.room}) // straight in, as from an invite link
+	newcomer.wait("snapshot", isT("snapshot"))
+	alice.wait("newcomer waiting", func(m msg) bool {
+		list, _ := data(m)["players"].([]any)
+		return m["t"] == "waiting_changed" && len(list) == 1 && list[0] == "newcomer"
+	})
+
+	_ = newcomer.ws.Close(websocket.StatusNormalClosure, "bye")
+	alice.wait("the line emptying", func(m msg) bool {
+		list, ok := data(m)["players"].([]any)
+		return m["t"] == "waiting_changed" && ok && len(list) == 0
+	})
+}
+
+func TestLeavingTheLineFreesYouToDoOtherThings(t *testing.T) {
+	g := startedGame(t, nil)
+	alice := g.players["alice"]
+	fan := dial(t, g.url, "fan")
+	fan.wait("hello", isT("hello"))
+	fan.mustOK(msg{"type": "join", "room": g.room})
+	alice.wait("fan waiting", func(m msg) bool {
+		list, _ := data(m)["players"].([]any)
+		return m["t"] == "waiting_changed" && len(list) == 1
+	})
+	fan.mustOK(msg{"type": "leave"})
+	alice.wait("the line emptying", func(m msg) bool {
+		list, ok := data(m)["players"].([]any)
+		return m["t"] == "waiting_changed" && ok && len(list) == 0
+	})
+	if r := fan.request(msg{"type": "create_room"}); r["t"] != "room_created" {
+		t.Errorf("after leaving the line she should be free to make a room: %v", r)
+	}
+}
+
+func TestJoiningAGameThatIsOverIsRefused(t *testing.T) {
+	g := startedGame(t, nil)
+	for _, n := range names {
+		g.players[n].mustOK(msg{"type": "vote_end", "agree": true}) // everyone agrees: the game ends
+	}
+	late := dial(t, g.url, "late")
+	late.wait("hello", isT("hello"))
+	if r := late.request(msg{"type": "join", "room": g.room}); data(r)["code"] != "not_joinable" {
+		t.Errorf("joining a finished game: %v", data(r))
+	}
+	// She is not stuck in that room: she can still watch it, or make her own.
+	if r := late.request(msg{"type": "create_room"}); r["t"] != "room_created" {
+		t.Errorf("create_room after a refused join: %v", r)
+	}
+}
