@@ -291,6 +291,25 @@ func TestABotCallsJackpotOnlyOnItsPartnersSayAndNotWhenItWouldBeRefused(t *testi
 	}
 }
 
+func TestABotWaitsAtLeastTenSecondsAfterThePartnersSignalBeforeCalling(t *testing.T) {
+	snap := view(engine.Hand{1, 1, 1, 1}, rivalA)
+	for seed := uint64(1); seed <= 200; seed++ {
+		d := NewDriver(seed, Config{})
+		b := newBrain(me)
+		teamsKnown(b, snap)
+		b.trusted = &heard{from: partner, at: t0}
+		b.dirty = true
+		b.plan(t0, snap, d)
+		it := b.intents[kProclaim]
+		if it == nil {
+			t.Fatalf("seed %d: it should plan to call", seed)
+		}
+		if gap := it.at.Sub(t0); gap < 10*time.Second {
+			t.Fatalf("seed %d: called %v after the signal, want at least 10s", seed, gap)
+		}
+	}
+}
+
 func TestAnyActionIsRefusedWhilePaused(t *testing.T) {
 	d, b, now := newTest()
 	snap := view(engine.Hand{2, 1, 1, 1}, me)
