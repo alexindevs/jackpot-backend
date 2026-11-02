@@ -331,3 +331,45 @@ func firstHeld(h *harness, id engine.PlayerID) engine.CardType {
 	}
 	return 0
 }
+
+func TestTheSnapshotOfAFinishedGameSaysHowItEnded(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Engine.WinsToFinish = 1
+	h := newHarnessCfg(t, 92, cfg)
+	h.playing(4)
+	if s := h.r.snapshotFor(pid(0)); s.Game == nil || s.Game.Result != nil {
+		t.Fatalf("a game in progress has no result: %+v", s.Game)
+	}
+	target := pid(1)
+	h.driveCircles(target, false)
+	h.must(h.partnerOf(target), Proclaim{})
+	if h.r.Phase() != PhaseOver {
+		t.Fatalf("phase = %v", h.r.Phase())
+	}
+	want := h.r.members[target].team
+	watcher := h.watch("late1") // someone arriving after the end
+	for _, who := range []engine.PlayerID{pid(0), pid(1), watcher} {
+		res := h.r.snapshotFor(who).Game.Result
+		if res == nil || res.Draw || res.Winner != want || res.Reason != engine.EndWins || !res.CountsForStats || res.Wins[want] != 1 {
+			t.Errorf("%s sees result %+v, want team %d winning on wins", who, res, want)
+		}
+	}
+	// The snapshot holds its own copy: changing it must not touch the game.
+	res := h.r.snapshotFor(pid(0)).Game.Result
+	res.Wins[want] = 99
+	if h.r.game.Result().Wins[want] != 1 {
+		t.Error("the snapshot shares its wins map with the game")
+	}
+}
+
+func TestTheSnapshotOfADrawnGameSaysSo(t *testing.T) {
+	h := newHarness(t, 93)
+	h.playing(4)
+	for i := 0; i < 4; i++ {
+		h.must(pid(i), VoteEnd{Agree: true})
+	}
+	res := h.r.snapshotFor(pid(0)).Game.Result
+	if h.r.Phase() != PhaseOver || res == nil || !res.Draw || res.Reason != engine.EndAgreement {
+		t.Errorf("phase %v, result %+v, want a draw by agreement", h.r.Phase(), res)
+	}
+}

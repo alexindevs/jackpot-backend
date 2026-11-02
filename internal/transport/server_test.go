@@ -473,3 +473,18 @@ func TestWatchersCanQueueToJoinARunningGame(t *testing.T) {
 		t.Errorf("the room list should say 1 is waiting, got %v", waiting)
 	}
 }
+
+func TestAWatcherWhoArrivesAfterTheEndIsToldHowItEnded(t *testing.T) {
+	g := startedGame(t, nil)
+	for _, n := range names {
+		g.players[n].mustOK(msg{"type": "vote_end", "agree": true}) // everyone agrees: a drawn game
+	}
+	fan := dial(t, g.url, "fan")
+	fan.wait("hello", isT("hello"))
+	fan.mustOK(msg{"type": "spectate", "room": g.room})
+	snap := fan.wait("snapshot", isT("snapshot"))
+	res, _ := data(snap)["game"].(map[string]any)["result"].(map[string]any)
+	if res == nil || res["draw"] != true || res["reason"] != "agreement" {
+		t.Errorf("the snapshot of a finished game should carry the result, got %v", data(snap)["game"])
+	}
+}

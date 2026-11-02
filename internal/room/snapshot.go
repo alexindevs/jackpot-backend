@@ -1,6 +1,7 @@
 package room
 
 import (
+	"maps"
 	"slices"
 	"time"
 
@@ -40,6 +41,7 @@ type GameInfo struct {
 	Hands          map[engine.PlayerID]engine.Hand // spectator perk only
 	PendingReveals []engine.PlayerID
 	ForcedPass     engine.PlayerID
+	Result         *engine.Result // how the game ended, once it is over
 }
 
 // Snapshot is a whole-room state for one viewer. It is sent on join and on
@@ -100,6 +102,11 @@ func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 		}
 		for _, t := range g.Teams() {
 			gi.Wins[t] = g.Wins(t)
+		}
+		if res := g.Result(); res != nil {
+			over := *res
+			over.Wins = maps.Clone(res.Wins)
+			gi.Result = &over
 		}
 		for _, id := range gi.Seats {
 			gi.Points[id] = g.Points(id)
