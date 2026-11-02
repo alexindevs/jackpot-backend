@@ -8,6 +8,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/alexindevs/jackpot-backend/internal/bot"
+	"github.com/alexindevs/jackpot-backend/internal/botname"
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 	"github.com/alexindevs/jackpot-backend/internal/room"
 )
@@ -233,6 +235,8 @@ func (m *Manager) launch(id string, r *room.Room, initial []room.Out) {
 	ctx, cancel := context.WithCancel(m.ctx)
 	mr := &managed{id: id, cancel: cancel}
 	mr.runner = room.NewRunner(r, m.cfg.Now, func(outs []room.Out) { m.deliver(id, outs) })
+	a, b := cryptoSeed()
+	mr.runner.SetBots(bot.NewDriver(a^b, bot.Config{Speed: m.cfg.BotSpeed}))
 	m.mu.Lock()
 	m.rooms[id] = mr
 	m.mu.Unlock()
@@ -265,6 +269,9 @@ func (m *Manager) onPaused(roomID string, to engine.PlayerID, players []engine.P
 // identLocked finds what we know about a player: who is signed in, or who was
 // loaded from the database for a paused game.
 func (m *Manager) identLocked(id engine.PlayerID) (Identity, bool) {
+	if name, style, ok := botname.Profile(id); ok {
+		return Identity{ID: id, Name: name, Style: style}, true
+	}
 	if i, ok := m.idents[id]; ok {
 		return i, true
 	}

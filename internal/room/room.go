@@ -66,6 +66,7 @@ type Config struct {
 	LobbyEmptyGrace time.Duration // nobody connected for this long closes a lobby
 	LobbyPausedFor  time.Duration // a restored lobby waits this long for its members before it is closed
 	PausedFor       time.Duration // a paused game waits this long for its players before it is abandoned
+	BotPausedFor    time.Duration // a game with bots, paused because every person disconnected, waits this long for one to return
 
 	// ShortWinsToFinish is how many round wins end a short game, which the
 	// creator can pick when opening the room. A long game, the default, uses
@@ -112,6 +113,7 @@ func DefaultConfig() Config {
 		EmptyRoomGrace:     time.Minute,
 		LobbyEmptyGrace:    20 * time.Minute,
 		PausedFor:          24 * time.Hour,
+		BotPausedFor:       10 * time.Minute,
 		LobbyPausedFor:     time.Hour,
 		ShortWinsToFinish:  4,
 		ProclaimLockout:    3 * time.Minute,
@@ -132,6 +134,7 @@ type member struct {
 	ready     bool
 	team      engine.TeamID
 	removed   bool // kicked from the game; now only watching
+	bot       bool // played by the server, not a person
 }
 
 type inviteKey struct{ from, to engine.PlayerID }
@@ -182,6 +185,7 @@ func Short() Option { return func(r *Room) { r.short = true } }
 // engineConfig is the engine's settings for this room's game.
 func (r *Room) engineConfig() engine.Config {
 	c := r.cfg.Engine
+	c.NoStats = c.NoStats || r.hasBots()
 	if r.short {
 		c.WinsToFinish = r.cfg.ShortWinsToFinish
 	}
@@ -229,6 +233,7 @@ type Info struct {
 	MaxPlayers int
 	Joinable   bool // a join request would be accepted: into the lobby, or into the waiting line of a running game
 	Waiting    int  // watchers waiting to be paired into a team of their own
+	Bots       int  // how many of the players are bots
 	Paused     bool
 	Short      bool // a short game rather than a long one
 }
@@ -246,6 +251,7 @@ func (r *Room) Info() Info {
 		MaxPlayers: r.cfg.MaxPlayers,
 		Joinable:   r.joinable(),
 		Waiting:    len(r.waiting),
+		Bots:       r.bots(),
 		Paused:     r.paused,
 		Short:      r.short,
 	}
@@ -354,7 +360,7 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 			// A restored lobby keeps working for the people in it. What waits
 			// for everyone is the countdown, and new people joining.
 			switch in.(type) {
-			case Join, StartNow:
+			case Join, StartNow, AddBots, RemoveBot:
 				return ErrPaused
 			}
 		} else {
@@ -378,6 +384,10 @@ func (r *Room) dispatch(now time.Time, from engine.PlayerID, in Input) error {
 		return r.disconnect(now, from)
 	case StartNow:
 		return r.startNow(now, from)
+	case AddBots:
+		return r.addBots(now, from, v)
+	case RemoveBot:
+		return r.removeBot(from, v.Player)
 	case InviteToRoom:
 		return r.inviteToRoom(from, v.To)
 	case InvitePartner:
@@ -529,6 +539,14 @@ func (r *Room) leaveLobby(now time.Time, id engine.PlayerID, reason string) {
 	}
 	r.broadcast(MemberLeft{Player: id, Reason: reason})
 	r.deleteMember(id)
+	// A bot is there for a person. When its partner goes it goes too, and a
+	// lobby with nobody but bots left in it has no reason to exist.
+	if p := m.partner; p != "" && isBot(r.members[p]) {
+		r.dropBot(p)
+	}
+	if r.bots() > 0 && !r.hasPerson() {
+		r.close(now, "empty")
+	}
 }
 
 // syncCountdown runs after anything that can change who is in the lobby. It
@@ -749,7 +767,7 @@ func (r *Room) updateEmpty(now time.Time) {
 	}
 	connected := 0
 	for _, m := range r.members {
-		if m.connected && !m.removed {
+		if m.connected && !m.removed && !m.bot {
 			connected++
 		}
 	}
@@ -783,7 +801,11 @@ func (r *Room) fire(k dkey, at time.Time) {
 		r.reconnectExpired(at, k.player)
 	case dkEmpty:
 		if r.game != nil && (r.phase == PhaseChat || r.phase == PhasePlaying) {
-			r.pause(at, at.Add(r.cfg.PausedFor))
+			wait := r.cfg.PausedFor
+			if r.hasBots() {
+				wait = r.cfg.BotPausedFor // bots are no reason to keep a game for a day
+			}
+			r.pause(at, at.Add(wait))
 			return
 		}
 		r.close(at, "empty")

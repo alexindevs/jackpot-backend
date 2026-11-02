@@ -20,6 +20,7 @@ type PlayerInfo struct {
 	Ready     bool
 	Removed   bool
 	Team      engine.TeamID
+	Bot       bool // played by the server
 }
 
 // TimerInfo is a running countdown.
@@ -72,7 +73,7 @@ func (r *Room) snapshotFor(viewer engine.PlayerID) Snapshot {
 	for _, id := range r.order {
 		m := r.members[id]
 		s.Players = append(s.Players, PlayerInfo{
-			ID: id, Connected: m.connected, Partner: m.partner,
+			ID: id, Connected: m.connected, Bot: m.bot, Partner: m.partner,
 			Ready: m.ready, Removed: m.removed, Team: m.team,
 		})
 	}

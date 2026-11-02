@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/alexindevs/jackpot-backend/internal/botname"
 )
 
 // Handler serves the WebSocket endpoint at /ws and a health check at /healthz.
@@ -163,6 +165,9 @@ func (m *Manager) authenticate(ctx context.Context, ws *websocket.Conn) (*conn, 
 	ident, err := m.cfg.Auth.Authenticate(actx, in.Token)
 	if err != nil {
 		return nil, err
+	}
+	if botname.IsBotID(ident.ID) {
+		return nil, ErrUnauthorized // nobody signs in as a bot
 	}
 	return newConn(ws, ident, m.cfg.SendQueue, m.cfg.RatePerSec, m.cfg.RateBurst, m.cfg.Now()), nil
 }

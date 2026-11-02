@@ -22,6 +22,7 @@ type Runner struct {
 	room *Room
 	now  func() time.Time
 	sink func([]Out)
+	bots BotDriver
 	in   chan request
 	done chan struct{}
 }
@@ -29,6 +30,10 @@ type Runner struct {
 func NewRunner(room *Room, now func() time.Time, sink func([]Out)) *Runner {
 	return &Runner{room: room, now: now, sink: sink, in: make(chan request), done: make(chan struct{})}
 }
+
+// SetBots gives the runner the driver that plays the room's bots. It must be
+// called before Run.
+func (rn *Runner) SetBots(d BotDriver) { rn.bots = d }
 
 // Submit hands an input to the room and waits for its verdict. After the
 // runner has stopped it returns ErrClosed.
@@ -57,10 +62,11 @@ func (rn *Runner) Inspect(fn func(*Room)) error {
 // Run blocks until ctx is cancelled or the room closes.
 func (rn *Runner) Run(ctx context.Context) {
 	defer close(rn.done)
+	pump := &Pump{Room: rn.room, Bots: rn.bots, Sink: rn.sink}
 	for {
 		var wake <-chan time.Time
 		var timer *time.Timer
-		if at, ok := rn.room.NextDeadline(); ok {
+		if at, ok := pump.Next(); ok {
 			d := max(at.Sub(rn.now()), 0)
 			timer = time.NewTimer(d)
 			wake = timer.C
@@ -77,11 +83,9 @@ func (rn *Runner) Run(ctx context.Context) {
 				req.reply <- nil
 				break
 			}
-			outs, err := rn.room.Handle(rn.now(), req.from, req.in)
-			rn.sink(outs)
-			req.reply <- err
+			req.reply <- pump.Handle(rn.now(), req.from, req.in)
 		case <-wake:
-			rn.sink(rn.room.Tick(rn.now()))
+			pump.Advance(rn.now())
 		}
 		if timer != nil {
 			timer.Stop()

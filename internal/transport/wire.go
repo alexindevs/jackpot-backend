@@ -40,8 +40,10 @@ type inbound struct {
 	Agree   *bool           `json:"agree,omitempty"`
 	Text    string          `json:"text,omitempty"`
 	Gesture string          `json:"gesture,omitempty"`
-	Short   bool            `json:"short,omitempty"` // create_room: a short game instead of a long one
-	After   int64           `json:"after,omitempty"` // resume: the last sequence number the client has seen
+	Short   bool            `json:"short,omitempty"`  // create_room: a short game instead of a long one
+	Teams   int             `json:"teams,omitempty"`  // add_bots: how many teams of bots to add
+	Player  engine.PlayerID `json:"player,omitempty"` // remove_bot: which bot
+	After   int64           `json:"after,omitempty"`  // resume: the last sequence number the client has seen
 }
 
 var errBadMessage = errors.New("malformed message")
@@ -59,6 +61,13 @@ func toInput(in inbound) (room.Input, error) {
 	switch in.Type {
 	case "start_now":
 		return room.StartNow{}, nil
+	case "add_bots":
+		return room.AddBots{Teams: in.Teams}, nil
+	case "remove_bot":
+		if in.Player == "" {
+			return nil, fmt.Errorf("%w: player is required", errBadMessage)
+		}
+		return room.RemoveBot{Player: in.Player}, nil
 	case "invite_room":
 		return room.InviteToRoom{To: in.To}, nil
 	case "invite_partner":
@@ -179,6 +188,7 @@ var errCodes = []struct {
 	{room.ErrWrongPhase, "wrong_phase"}, {room.ErrBadText, "bad_text"},
 	{room.ErrBadGesture, "bad_gesture"}, {room.ErrSlowDown, "slow_down"}, {room.ErrNotCreator, "not_creator"}, {room.ErrTooFewPlayers, "too_few_players"},
 	{room.ErrUnpairedPlayers, "unpaired_players"},
+	{room.ErrNothingToAdd, "nothing_to_add"}, {room.ErrNotABot, "not_a_bot"},
 	{engine.ErrNotHolder, "not_holder"}, {engine.ErrNoSuchCard, "no_such_card"},
 	{engine.ErrSelfSuspect, "self_suspect"}, {engine.ErrNoPoints, "no_points"},
 	{engine.ErrBusy, "busy"}, {engine.ErrNoPending, "nothing_to_answer"},

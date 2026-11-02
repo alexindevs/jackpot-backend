@@ -62,8 +62,11 @@ type Config struct {
 	AuthTimeout  time.Duration // how long a new socket has to authenticate
 	SendQueue    int           // per-connection outgoing queue; a full queue drops the connection
 	MaxReadBytes int64
-	RatePerSec   float64 // sustained client messages per second
-	RateBurst    int
+	// BotSpeed scales how fast bots think; 1, the default, is a person's pace.
+	BotSpeed float64
+
+	RatePerSec float64 // sustained client messages per second
+	RateBurst  int
 }
 
 func (c *Config) setDefaults() {

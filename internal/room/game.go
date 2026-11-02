@@ -219,6 +219,13 @@ func (r *Room) apply(now time.Time, cmd engine.Command) error {
 	}
 	r.sendHandUpdates(before)
 
+	// A game with bots in it ends when the last person has gone: the bots
+	// would only be playing each other.
+	if r.game.Phase() != engine.PhaseOver && r.bots() > 0 && !r.hasPerson() {
+		r.close(now, "no players left")
+		return nil
+	}
+
 	if r.paused && r.game.Phase() != engine.PhaseOver {
 		return nil // a paused game starts its timers again when it resumes
 	}

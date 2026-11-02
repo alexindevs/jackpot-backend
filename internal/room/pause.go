@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/alexindevs/jackpot-backend/internal/botname"
 	"github.com/alexindevs/jackpot-backend/internal/engine"
 )
 
@@ -114,7 +115,7 @@ func (r *Room) maybeResume(now time.Time) {
 	}
 	any := false
 	for _, m := range r.members {
-		if m.removed {
+		if m.removed || m.bot {
 			continue
 		}
 		any = true
@@ -226,7 +227,8 @@ func Restore(cfg Config, sv Saved, now time.Time) (*Room, error) {
 		}
 	}
 	for _, sp := range sv.Setup.Specs {
-		r.members[sp.ID] = &member{id: sp.ID, partner: partner[sp.ID], team: sp.Team, removed: !g.Active(sp.ID)}
+		bot := botname.IsBotID(sp.ID)
+		r.members[sp.ID] = &member{id: sp.ID, partner: partner[sp.ID], team: sp.Team, removed: !g.Active(sp.ID), bot: bot, connected: bot}
 		r.order = append(r.order, sp.ID)
 	}
 	// Teams that joined late are in the command log, not in the setup. Going
@@ -239,7 +241,8 @@ func Restore(cfg Config, sv Saved, now time.Time) (*Room, error) {
 		for _, p := range [2][2]engine.PlayerID{{at.A, at.B}, {at.B, at.A}} {
 			m := r.members[p[0]]
 			if m == nil {
-				m = &member{id: p[0]}
+				bot := botname.IsBotID(p[0])
+				m = &member{id: p[0], bot: bot, connected: bot}
 				r.members[p[0]] = m
 				r.order = append(r.order, p[0])
 			}
@@ -348,7 +351,8 @@ func RestoreLobby(cfg Config, sl SavedLobby, now time.Time) (*Room, error) {
 		if r.members[id] != nil {
 			return nil, errors.New("a member is listed twice")
 		}
-		r.members[id] = &member{id: id}
+		bot := botname.IsBotID(id)
+		r.members[id] = &member{id: id, bot: bot, connected: bot}
 		r.order = append(r.order, id)
 	}
 	for _, p := range sl.Pairs {

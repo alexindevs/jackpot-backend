@@ -116,6 +116,10 @@ type Config struct {
 	SpareCopies     int
 	SuspicionPoints int // per player, refreshed every round
 	WinsToFinish    int // round wins that end the game (J-A-C-K-P-O-T)
+
+	// NoStats stops the game counting toward leaderboards and duo stats, as
+	// for a game with bots in it. It is part of the setup, so a replay agrees.
+	NoStats bool `json:",omitempty"`
 }
 
 // DefaultConfig matches docs/rules.md.

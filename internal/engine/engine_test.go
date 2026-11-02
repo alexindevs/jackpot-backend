@@ -854,3 +854,24 @@ func TestRepeatingAVoteChangesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestAGameWithNoStatsNeverCountsForThem(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.WinsToFinish = 1
+	cfg.NoStats = true
+	s, err := New(cfg, testSpecs(2), testRNG(40))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustApply(t, s, StartRound{})
+	r := rolesOf(s)
+	setHand(t, s, r.o2, Hand{4, 0, 0, 0})
+	evs := mustApply(t, s, Proclaim{By: r.o1})
+	over, ok := find[GameOver](evs)
+	if !ok || over.Result.Reason != EndWins || over.Result.CountsForStats {
+		t.Errorf("a win in a no-stats game: %+v", over.Result)
+	}
+	if s.Result() == nil || s.Result().CountsForStats {
+		t.Error("the stored result must agree")
+	}
+}

@@ -638,6 +638,9 @@ func (s *State) checkVotes() []Event {
 }
 
 func (s *State) finish(r Result) Event {
+	if s.cfg.NoStats {
+		r.CountsForStats = false
+	}
 	r.Wins = map[TeamID]int{}
 	for t, w := range s.wins {
 		r.Wins[t] = w
