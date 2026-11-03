@@ -29,6 +29,8 @@ type simResult struct {
 	winner        engine.TeamID
 	reason        engine.EndReason
 	passes        int
+	humanTeam     engine.TeamID
+	teams         int
 }
 
 // playGame plays a whole game with a fake clock. One seat is a "person" who is
@@ -114,6 +116,12 @@ func playGameWith(t *testing.T, seed uint64, botTeams int, short bool, afk bool,
 		res.over = true
 		res.countsForStat = g.Result().CountsForStats
 		res.winner, res.reason = g.Result().Winner, g.Result().Reason
+		for _, p := range r.ViewFor(human).Players {
+			if p.ID == human {
+				res.humanTeam = p.Team
+			}
+		}
+		res.teams = len(g.Result().Teams)
 	}
 	return res
 }
@@ -188,4 +196,25 @@ func TestBotsCarryOnAfterThePersonReturnsFromAPause(t *testing.T) {
 			t.Fatalf("seed %d: paused and resumed (%v) but the game did not finish: %+v", seed, done, res)
 		}
 	}
+}
+
+// Who wins when the person is played by the same brain at the same pace, in a
+// room of six: it should be no better or worse than any other seat.
+func TestTheSeatOfThePersonWinsAboutItsShare(t *testing.T) {
+	games := 60
+	if n, err := strconv.Atoi(os.Getenv("JACKPOT_SIM_GAMES")); err == nil && n > 0 {
+		games = n
+	}
+	won, total := 0, 0
+	for seed := uint64(1); seed <= uint64(games); seed++ {
+		res := playGame(t, seed, 2, true, false) // the person, a bot partner and two bot teams
+		if !res.over {
+			t.Fatalf("seed %d: unfinished", seed)
+		}
+		total++
+		if res.winner == res.humanTeam {
+			won++
+		}
+	}
+	t.Logf("the person's team won %d of %d games in a room of 3 teams (an even share would be %.0f)", won, total, float64(total)/3)
 }
